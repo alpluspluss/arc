@@ -140,8 +140,14 @@ function(arc_test name)
 
     cmake_parse_arguments(ARG "" "" "SOURCES;LIBS" ${ARGN})
 
-    # create the test executable
+    # create the test executable and link it with GTest as
+    # the test framework by default
     arc_executable(${name} SOURCES ${ARG_SOURCES} LIBS ${ARG_LIBS})
+    if(TARGET GTest::gtest_main)
+        target_link_libraries(${name} PRIVATE GTest::gtest_main)
+    elseif(TARGET gtest_main)
+        target_link_libraries(${name} PRIVATE gtest_main)
+    endif()
 
     # add to CTest
     add_test(NAME ${name} COMMAND $<TARGET_FILE:${name}>)

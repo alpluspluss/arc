@@ -22,7 +22,7 @@ set(ARC_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}")
 # build options
 option(ARC_BUILD_BENCHMARKS "Build benchmarks" OFF)
 option(ARC_BUILD_EXAMPLES "Build examples" OFF)
-option(ARC_BUILD_TESTS "Build tests" OFF)
+option(ARC_BUILD_TESTS "Build tests" ON)
 option(ARC_BUILD_SHARED_LIB "Build shared libraries" OFF)
 option(ARC_INSTALL "Install Arc libraries and headers" OFF)
 
@@ -55,6 +55,9 @@ message(STATUS "Building Arc as ${ARC_LIB_TYPE_STR} library")
 message(STATUS "Building benchmarks: ${ARC_BUILD_BENCHMARKS}")
 message(STATUS "Building examples: ${ARC_BUILD_EXAMPLES}")
 message(STATUS "Building tests: ${ARC_BUILD_TESTS}")
+
+# include the public include that will be used by the Arc libraries
+include_directories(include)
 
 # installation configuration
 if (ARC_INSTALL)
