@@ -15,13 +15,13 @@ namespace arc
 	/**
 	 *	@brief Lightweight dynamic array with configurable size type.
 	 *
-	 *	It is a compact alternative to `std::vector` that uses
-	 *	a smalled fixed-with size type by default. It is designed
-	 *	to store a small sequence of elements.
+	 *	slice is a compact alternative to `std::vector` that uses a smaller
+	 *	fixed-width size type and assumes stateless allocators for maximum
+	 *	memory efficiency.
 	 *
 	 *	@tparam T Type of elements stored in the slice.
 	 *	@tparam SizeType Size/capacity type. Defaults to `std::uint16_t`.
-	 *	@tparam Allocator Allocator type. Defaults to `ach::allocator<T>`.
+	 *	@tparam Allocator Allocator type. Must be stateless. Defaults to `ach::allocator<T>`.
 	 */
 	template<typename T,
 			typename SizeType = std::uint16_t,
@@ -46,13 +46,13 @@ namespace arc
 		/**
 		 *	@brief Default constructor.
 		 */
-		constexpr slice() noexcept : dt(nullptr), sz(0), cap(0), alloc() {}
+		constexpr slice() noexcept : dt(nullptr), sz(0), cap(0) {}
 
 		/**
 		 *	@brief Constructor with initial size.
 		 */
-		explicit slice(size_type n, const allocator_type& alloc = allocator_type())
-			: dt(alloc.allocate(n)), sz(n), cap(n), alloc(alloc)
+		explicit slice(size_type n, const allocator_type& = allocator_type())
+			: dt(nullptr), sz(0), cap(0)
 		{
 			resize(n);
 		}
@@ -60,102 +60,105 @@ namespace arc
 		/**
 		 *	@brief Constructor with size and fill value.
 		 */
-		slice(size_type n, const value_type& value, const allocator_type& alloc = allocator_type())
-			: dt(nullptr), sz(0), cap(0), alloc(alloc)
+		slice(size_type n, const value_type& value, const allocator_type& = allocator_type())
+			: dt(nullptr), sz(0), cap(0)
 		{
 			assign(n, value);
 		}
 
 		/**
-         *	@brief Constructor from iterator range
-         */
-        template<typename InputIt>
-        slice(InputIt first, InputIt last, const allocator_type& alloc = allocator_type())
-            : dt(nullptr), sz(0), cap(0), alloc(alloc)
-        {
-            assign(first, last);
-        }
+		 *	@brief Constructor from iterator range
+		 */
+		template<typename InputIt>
+		slice(InputIt first, InputIt last, const allocator_type& = allocator_type())
+			: dt(nullptr), sz(0), cap(0)
+		{
+			assign(first, last);
+		}
 
-        /**
-         *	@brief Constructor from initializer list
-         */
-        slice(std::initializer_list<T> init, const allocator_type& alloc = allocator_type{})
-            : dt(nullptr), sz(0), cap(0), alloc(alloc)
-        {
-            assign(init);
-        }
+		/**
+		 *	@brief Constructor from initializer list
+		 */
+		slice(std::initializer_list<T> init, const allocator_type& = allocator_type())
+			: dt(nullptr), sz(0), cap(0)
+		{
+			assign(init);
+		}
 
-        /**
-         *	@brief Copy constructor
-         */
-        slice(const slice& other)
-            : dt(nullptr), sz(0), cap(0), alloc(other.alloc)
-        {
-            assign(other.begin(), other.end());
-        }
+		/**
+		 *	@brief Copy constructor
+		 */
+		slice(const slice& other)
+			: dt(nullptr), sz(0), cap(0)
+		{
+			assign(other.begin(), other.end());
+		}
 
-        /**
-         *	@brief Move constructor
-         */
-        slice(slice&& other) noexcept
-            : dt(other.dt), sz(other.sz), cap(other.cap), alloc(std::move(other.alloc))
-        {
-            other.dt = nullptr;
-            other.sz = 0;
-            other.cap = 0;
-        }
+		/**
+		 *	@brief Move constructor
+		 */
+		slice(slice&& other) noexcept
+			: dt(other.dt), sz(other.sz), cap(other.cap)
+		{
+			other.dt = nullptr;
+			other.sz = 0;
+			other.cap = 0;
+		}
 
-        /**
-         *	@brief Destructor
-         */
-        ~slice()
-        {
-            clear();
-            if (dt)
-                alloc.deallocate(dt, cap);
-        }
+		/**
+		 *	@brief Destructor
+		 */
+		~slice()
+		{
+			clear();
+			if (dt) {
+				allocator_type alloc;
+				alloc.deallocate(dt, cap);
+			}
+		}
 
-        /**
-         * @brief Copy assignment
-         */
-        slice& operator=(const slice& other)
-        {
-            if (this != &other)
-                assign(other.begin(), other.end());
-            return *this;
-        }
+		/**
+		 * @brief Copy assignment
+		 */
+		slice& operator=(const slice& other)
+		{
+			if (this != &other)
+				assign(other.begin(), other.end());
+			return *this;
+		}
 
-        /**
-         * @brief Move assignment
-         */
-        slice& operator=(slice&& other) noexcept
-        {
-            if (this != &other)
-            {
-                clear();
-                if (dt)
-                    alloc.deallocate(dt, cap);
+		/**
+		 * @brief Move assignment
+		 */
+		slice& operator=(slice&& other) noexcept
+		{
+			if (this != &other)
+			{
+				clear();
+				if (dt) {
+					allocator_type alloc;
+					alloc.deallocate(dt, cap);
+				}
 
-                dt = other.dt;
-                sz = other.sz;
-                cap = other.cap;
-                alloc = std::move(other.alloc);
+				dt = other.dt;
+				sz = other.sz;
+				cap = other.cap;
 
-                other.dt = nullptr;
-                other.sz = 0;
-                other.cap = 0;
-            }
-            return *this;
-        }
+				other.dt = nullptr;
+				other.sz = 0;
+				other.cap = 0;
+			}
+			return *this;
+		}
 
-        /**
-         * @brief Assignment from initializer list
-         */
-        slice& operator=(std::initializer_list<T> init)
-        {
-            assign(init);
-            return *this;
-        }
+		/**
+		 * @brief Assignment from initializer list
+		 */
+		slice& operator=(std::initializer_list<T> init)
+		{
+			assign(init);
+			return *this;
+		}
 
 		reference at(size_type pos)
 		{
@@ -305,6 +308,7 @@ namespace arc
 
 		void clear() noexcept
 		{
+			allocator_type alloc;
 			for (size_type i = 0; i < sz; ++i)
 				alloc.destroy(&dt[i]);
 			sz = 0;
@@ -322,7 +326,7 @@ namespace arc
 			return begin() + index;
 		}
 
-		iterator insert(const_iterator pos, size_type count, const T& value)
+		iterator insert(const_iterator pos, size_type count, const value_type& value)
 		{
 			const auto index = static_cast<size_type>(pos - cbegin());
 			insert_impl(index, count, value);
@@ -330,6 +334,7 @@ namespace arc
 		}
 
 		template<typename InputIt>
+			requires(std::input_iterator<InputIt>)
 		iterator insert(const_iterator pos, InputIt first, InputIt last)
 		{
 			const auto index = static_cast<size_type>(pos - cbegin());
@@ -377,6 +382,7 @@ namespace arc
 				reserve(new_cap);
 			}
 
+			allocator_type alloc;
 			alloc.construct(&dt[sz], std::forward<Args>(args)...);
 			++sz;
 			return back();
@@ -385,6 +391,7 @@ namespace arc
 		void pop_back() noexcept
 		{
 			--sz;
+			allocator_type alloc;
 			alloc.destroy(&dt[sz]);
 		}
 
@@ -399,11 +406,13 @@ namespace arc
 			{
 				if (n > cap)
 					reserve(n);
+				allocator_type alloc;
 				for (size_type i = sz; i < n; ++i)
 					alloc.construct(&dt[i], value);
 			}
 			else
 			{
+				allocator_type alloc;
 				for (size_type i = n; i < sz; ++i)
 					alloc.destroy(&dt[i]);
 			}
@@ -441,17 +450,18 @@ namespace arc
 
 		allocator_type get_allocator() const noexcept
 		{
-			return alloc;
+			return allocator_type{};
 		}
 
 	private:
 		pointer dt;
 		size_type sz;
 		size_type cap;
-		[[no_unique_address]] allocator_type alloc;
 
 		void reallocate(size_type new_capacity)
 		{
+			allocator_type alloc;
+
 			if (new_capacity == 0)
 			{
 				clear();
@@ -488,6 +498,7 @@ namespace arc
 			if (new_size > cap)
 				reserve(new_size);
 
+			allocator_type alloc;
 			for (size_type i = sz; i > index; --i)
 			{
 				alloc.construct(&dt[i + n - 1], std::move(dt[i - 1]));
@@ -501,66 +512,72 @@ namespace arc
 		}
 
 		template<typename InputIt>
-        void insert_range_impl(size_type index, InputIt first, InputIt last)
-        {
-            if (first == last)
-            	return;
+		void insert_range_impl(size_type index, InputIt first, InputIt last)
+		{
+			if (first == last)
+				return;
 
-            const auto count = static_cast<size_type>(std::distance(first, last));
-            const size_type new_size = sz + count;
-            if (new_size > cap)
-                reserve(new_size);
+			const auto count = static_cast<size_type>(std::distance(first, last));
+			const size_type new_size = sz + count;
+			if (new_size > cap)
+				reserve(new_size);
 
+			allocator_type alloc;
 			/* move elements by -1 to make space for new elements to apppend */
-            for (size_type i = sz; i > index; --i)
-            {
-                alloc.construct(&dt[i + count - 1], std::move(dt[i - 1]));
-                alloc.destroy(&dt[i - 1]);
-            }
+			for (size_type i = sz; i > index; --i)
+			{
+				alloc.construct(&dt[i + count - 1], std::move(dt[i - 1]));
+				alloc.destroy(&dt[i - 1]);
+			}
 
-            /* inserts the new elements */
-            size_type i = index;
-            for (auto it = first; it != last; ++it, ++i)
-                alloc.construct(&dt[i], *it);
+			/* inserts the new elements */
+			size_type i = index;
+			for (auto it = first; it != last; ++it, ++i)
+				alloc.construct(&dt[i], *it);
 
-            sz = new_size;
-        }
+			sz = new_size;
+		}
 
-        template<typename... Args>
-        void emplace_impl(size_type index, Args&&... args)
-        {
-            if (sz == cap)
-            {
-                const size_type new_cap = cap == 0 ? 1 : cap * 2;
-                reserve(new_cap);
-            }
+		template<typename... Args>
+		void emplace_impl(size_type index, Args&&... args)
+		{
+			if (sz == cap)
+			{
+				const size_type new_cap = cap == 0 ? 1 : cap * 2;
+				reserve(new_cap);
+			}
 
-            for (size_type i = sz; i > index; --i)
-            {
-                alloc.construct(&dt[i], std::move(dt[i - 1]));
-                alloc.destroy(&dt[i - 1]);
-            }
+			allocator_type alloc;
+			for (size_type i = sz; i > index; --i)
+			{
+				alloc.construct(&dt[i], std::move(dt[i - 1]));
+				alloc.destroy(&dt[i - 1]);
+			}
 
-            alloc.construct(&dt[index], std::forward<Args>(args)...);
-            ++sz;
-        }
+			alloc.construct(&dt[index], std::forward<Args>(args)...);
+			++sz;
+		}
 
-        void erase_impl(size_type start_idx, size_type end_idx)
-        {
-            const size_type count = end_idx - start_idx;
-            for (size_type i = start_idx; i < end_idx; ++i)
-                alloc.destroy(&dt[i]);
+		void erase_impl(size_type start_idx, size_type end_idx)
+		{
+			const size_type count = end_idx - start_idx;
+			allocator_type alloc;
+
+			for (size_type i = start_idx; i < end_idx; ++i)
+				alloc.destroy(&dt[i]);
 
 			/* shift remaining elements to the left */
-            for (size_type i = end_idx; i < sz; ++i)
-            {
-                alloc.construct(&dt[i - count], std::move(dt[i]));
-                alloc.destroy(&dt[i]);
-            }
+			for (size_type i = end_idx; i < sz; ++i)
+			{
+				alloc.construct(&dt[i - count], std::move(dt[i]));
+				alloc.destroy(&dt[i]);
+			}
 
-            sz -= count;
-        }
-	};
+			sz -= count;
+		}
+		/* no padding for maximum memory efficiency; we don't need extra padding
+		 * as the slice will be used specifically as a component in other structs */
+	} __attribute__((packed));
 
 	/* deduction guides for slice */
 	template<typename InputIt>
@@ -569,15 +586,17 @@ namespace arc
 	template<typename T>
 	slice(std::initializer_list<T>) -> slice<T>;
 
-	/* aliases for common slice types with different size types */
+	/* aliases for common slice types with different size types
+	 * note: the size and storage is under the assumption that the
+	 * allocator is stateless */
 	template<typename T>
-	using u8slice = slice<T, std::uint8_t>; /* up to 255 elements; 10 bytes storage */
+	using u8slice = slice<T, std::uint8_t>; /* up to 255 elements; ~12 bytes storage */
 
 	template<typename T>
-	using u16slice = slice<T>; /* up to 65535 elements; 12 bytes storage */
+	using u16slice = slice<T>; /* up to 65535 elements; ~12 bytes storage */
 
 	template<typename T>
-	using u32slice = slice<T, std::uint32_t>; /* up to 4294967295 elements; 16 bytes storage */
+	using u32slice = slice<T, std::uint32_t>; /* up to 4294967295 elements; ~16 bytes storage */
 
 	/* u64slice is not defined as it would require 24 bytes of storage,
 	 * which defeats the purpose of using a smaller size type */
