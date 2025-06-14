@@ -1,0 +1,30 @@
+# this project is part of the Arc project; licensed under the MIT license. see LICENSE for more info
+
+# @brief Config file for the Arc package.
+#   This file allows other projects to find Arc using find_package(Arc).
+#
+# @usage:
+#   find_package(Arc REQUIRED)
+#   target_link_libraries(my_target Arc::foundation Arc::support)
+
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# note: additional dependencies can be added here when needed
+# "ArcTargets.cmake" is generated automatically by CMake
+include("${CMAKE_CURRENT_LIST_DIR}/ArcTargets.cmake")
+check_required_components(Arc)
+
+if(Arc_FOUND)
+    message(STATUS "Found Arc: ${Arc_VERSION}. Version: \"${Arc_VERSION}\")")
+
+    # set useful variables for the user
+    # note to dev: add more libraries here when the component is ready
+    set(ARC_LIBRARIES Arc::Arc Arc::Support)
+    set(ARC_INCLUDE_DIRS "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_INCLUDEDIR@")
+
+    # this is here for backward compatibility with older versions of Arc
+    set(Arc_LIBRARIES ${ARC_LIBRARIES})
+    set(Arc_INCLUDE_DIRS ${ARC_INCLUDE_DIRS})
+endif()

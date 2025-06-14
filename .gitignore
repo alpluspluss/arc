@@ -1,0 +1,58 @@
+# Build directories
+build/
+.cache/
+iso_root/
+
+# Generated ISOs
+*.iso
+*.img
+*.hdd
+
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# IDE/Editor specific
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# OVMF files
+ovmf/
+*.fd
+
+# Temporary files
+*.log
+*.bak
+*.tmp
+
+# Sites
+*.lockb
