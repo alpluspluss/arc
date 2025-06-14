@@ -9,12 +9,12 @@
   </p>
 </div>
 
-This repository contains the source code for Arc; a next-generation compiler infrastructure
-designed for performance, memory efficiency, and developer experience in C++26.
+This repository contains the source code for Arc; a modern, type-safe and moderately small 
+compiler backend.
 
-Arc eliminates the complexity and performance overhead of traditional compiler architectures
-by using direct type relationships and compact memory representations. It provides a clean
-foundation for building optimizing compilers with straightforward APIs and minimal overhead.
+Arc uses a graph-based intermediate representation to provide a flexible foundation 
+for building optimizing compilers with customizable passes. It is designed to be 
+easy to use and comprehensible while being fast and efficient.
 
 ## Getting Started
 
