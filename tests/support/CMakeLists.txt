@@ -5,6 +5,11 @@ arc_test(allocator-test
         LIBS Arc::Support
 )
 
+arc_test(slice-test
+        SOURCES slice.cpp
+        LIBS Arc::Support
+)
+
 arc_test(string-table-test
         SOURCES string-table.cpp
         LIBS Arc::Support
