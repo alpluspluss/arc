@@ -2,10 +2,10 @@
 
 #pragma once
 
-#include <memory>
 #include <string_view>
 #include <vector>
 #include <arc/foundation/node.hpp>
+#include <arc/support/allocator.hpp>
 
 namespace arc
 {
@@ -98,18 +98,28 @@ namespace arc
 
 		/**
 		 * @brief Get the read-only data region
+		 * @return The read-only data section
 		 */
 		[[nodiscard]]
 		Region* rodata() const;
 
+		/**
+		 * @brief Get the string table
+		 * @return String table
+		 */
+		StringTable& strtable();
+
 	private:
 		std::vector<Node*> fns;
-		std::vector<std::unique_ptr<Region>> regions;
+		std::vector<Region*> regions;
 		/* the global region; if `Node::parent` is equal
 		 * to `Module::root()` then that node belongs to the global scope */
 		Region* root_region;
 		Region* rodata_region; /* read-only section */
 		StringTable strtb;
 		StringTable::StringId mod_id;
+		/* note: the allocator share the same thread local storage
+		 * the point of declaring both is specifically for semantics */
+		ach::allocator<Region> region_alloc;
 	};
 }

@@ -7,10 +7,13 @@ namespace arc
 {
 	Module::Module(std::string_view name)
 	{
-		regions.push_back(std::make_unique<Region>(".__global", *this, nullptr));
-		root_region = regions.back().get();
-		regions.push_back(std::make_unique<Region>(".__rodata", *this, nullptr));
-		rodata_region = regions.back().get();
+		auto* root_mem = region_alloc.allocate(1);
+		root_region = std::construct_at(root_mem, ".__global", *this, nullptr);
+		regions.push_back(root_region);
+
+		auto* rodata_mem = region_alloc.allocate(1);
+		rodata_region = std::construct_at(rodata_mem, ".__rodata", *this, nullptr);
+		regions.push_back(rodata_region);
 		mod_id = strtb.intern(name);
 	}
 
@@ -31,10 +34,11 @@ namespace arc
 		if (!parent)
 			parent = root_region;
 
-		regions.push_back(std::make_unique<Region>(name, *this, parent));
-		auto* ptr = regions.back().get();
-		parent->add_child(ptr);
-		return ptr;
+		auto* mem = region_alloc.allocate(1);
+		auto* region = std::construct_at(mem, name, *this, parent);
+		regions.push_back(region);
+		parent->add_child(region);
+		return region;
 	}
 
 	Node *Module::find_fn(std::string_view name)
@@ -61,7 +65,6 @@ namespace arc
 	{
 		if (!node)
 			return;
-
 		rodata_region->append(node);
 	}
 
@@ -81,14 +84,7 @@ namespace arc
 	{
 		if (!region)
 			return false;
-
-		for (const auto& r : regions)
-		{
-			if (r.get() == region)
-				return true;
-		}
-
-		return false;
+		return std::ranges::find(regions, region) != regions.end();
 	}
 
 	const std::vector<Node*>& Module::functions() const
@@ -99,5 +95,10 @@ namespace arc
 	Region* Module::rodata() const
 	{
 		return rodata_region;
+	}
+
+	StringTable & Module::strtable()
+	{
+		return strtb;
 	}
 }

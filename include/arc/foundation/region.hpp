@@ -143,5 +143,6 @@ namespace arc
 		std::vector<Node*> ns; /** @brief Nodes the region contains */
 		Module& mod; /** @brief Module that owns this region */
 		Region* prnt; /** @brief The parent region */
+		StringTable::StringId region_id; /** @brief Region id to intern */
 	};
 }
