@@ -2,7 +2,6 @@
 
 #pragma once
 
-#include <atomic>
 #include <cstdint>
 #include <limits>
 #include <unordered_map>

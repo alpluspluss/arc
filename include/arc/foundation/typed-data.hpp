@@ -4,12 +4,14 @@
 
 #include <cstdint>
 #include <memory>
+#include <tuple>
 #include <typeinfo>
 #include <arc/support/slice.hpp>
 #include <arc/support/string-table.hpp>
 
 namespace arc
 {
+	class TypedData;
 	/** @brief Forward declaration of the `Node` structure */
 	struct Node;
 
@@ -217,7 +219,7 @@ namespace arc
 		struct value
 		{
 			/** @brief The fields of the struct */
-			u8slice<std::pair<StringTable::StringId, DataType> > fields;
+			u8slice<std::tuple<StringTable::StringId, DataType, TypedData> > fields;
 			/** @brief The alignment of the struct */
 			std::uint32_t alignment;
 			/** @brief Interned string id to the struct name */
