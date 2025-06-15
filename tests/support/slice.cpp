@@ -52,12 +52,12 @@ TEST_F(SliceFixture, SizeAndValueConstruction)
 
 TEST_F(SliceFixture, InitializerListConstruction)
 {
-	arc::slice<int> s { 1, 2, 3, 4, 5 };
+	arc::slice<std::size_t> s { 1, 2, 3, 4, 5 };
 
 	EXPECT_EQ(s.size(), 5);
-	for (size_t i = 0; i < s.size(); ++i)
+	for (std::size_t i = 0; i < s.size(); ++i)
 	{
-		EXPECT_EQ(s[i], static_cast<int>(i + 1));
+		EXPECT_EQ(static_cast<std::size_t>(s[i]), static_cast<std::size_t>(i + 1));
 	}
 }
 

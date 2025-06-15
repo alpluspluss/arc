@@ -132,7 +132,10 @@ struct alignas(64) AlignedType
 
 TEST_F(AllocatorFixture, AlignmentTest)
 {
-    using AlignedStorage = std::aligned_storage_t<sizeof(double[8]), 64>;
+    struct alignas(64) AlignedStorage
+    {
+        double data[8];
+    };
 
     ach::allocator<AlignedStorage> alloc;
     AlignedStorage* ptr = alloc.allocate(1);
