@@ -175,7 +175,7 @@ namespace arc
 			{
 				return elem_type == other.elem_type;
 			}
-		};
+		} __attribute__((packed));
 	};
 
 	/**
@@ -190,7 +190,7 @@ namespace arc
 			Node *pointee;
 			/** @brief The address space of the pointer */
 			std::uint32_t addr_space;
-		};
+		} __attribute__((packed));
 	};
 
 	/**
@@ -205,7 +205,7 @@ namespace arc
 			u16slice<Node *> elements;
 			/** @brief The element type */
 			DataType elem_type;
-		};
+		} __attribute__((packed));
 	};
 
 	/**
@@ -220,7 +220,9 @@ namespace arc
 			u8slice<std::pair<StringTable::StringId, DataType> > fields;
 			/** @brief The alignment of the struct */
 			std::uint32_t alignment;
-		};
+			/** @brief Interned string id to the struct name */
+			StringTable::StringId name;
+		} __attribute__((packed));
 	};
 
 	/**
