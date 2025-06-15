@@ -12,7 +12,7 @@ namespace arc
 	 * @brief Represents the type of operation an IR node performs
 	 * @note This enum is used to identify the type of operation of an IR node
 	 */
-	enum class NodeType
+	enum class NodeType : std::uint16_t
 	{
 		/** @brief Entry point of a basic block or function */
 		ENTRY,
