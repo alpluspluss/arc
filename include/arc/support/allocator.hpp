@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <new>
 #include <type_traits>
 #if defined(__unix__) || defined(__unix) || (defined(__APPLE__) && defined(__MACH__))
@@ -220,7 +221,7 @@ namespace ach
 			std::uint16_t blocks;
 		};
 
-		class alignas(PAGE_SIZE) Pool
+		class Pool
 		{
 		public:
 			std::size_t cap;
@@ -228,37 +229,17 @@ namespace ach
 			Pool *next;
 			std::uint8_t *memory;
 
-			explicit Pool(const size_t size)
+			explicit Pool(std::uint8_t* mem, const size_t size)
+				: cap(size), free_list(nullptr), next(nullptr), memory(mem)
 			{
-#if defined(__unix__) || defined(__unix) || (defined(__APPLE__) && defined(__MACH__))
-				memory = static_cast<uint8_t *>(mmap(nullptr, size, PROT_READ | PROT_WRITE,
-				                                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
-				if (memory == MAP_FAILED)
-					throw std::bad_alloc();
-#elif defined(_WIN32) || defined(_WIN64)
-                memory = static_cast<uint8_t *>(VirtualAlloc(nullptr, size,
-                                                            MEM_COMMIT | MEM_RESERVE,
-                                                            PAGE_READWRITE));
-                if (!memory)
-                    throw std::bad_alloc();
-#endif
-				cap = size;
-				free_list = nullptr;
-				next = nullptr;
+				/* memory is passed in from `allocator::allocate_pool`
+				 * pool itself is just a struct with metadata
+				 * that points to its slice of the big mmap'd region */
 			}
 
-			~Pool()
-			{
-				if (memory != nullptr)
-				{
-#if defined(__unix__) || defined(__unix) || (defined(__APPLE__) && defined(__MACH__))
-					munmap(memory, cap);
-#elif defined(_WIN32) || defined(_WIN64)
-                    VirtualFree(memory, 0, MEM_RELEASE);
-#endif
-					memory = nullptr;
-				}
-			}
+			/* note: the cleanup is delegated to the global state whose
+			 *	cleanup is when the thread lifetime ends */
+			~Pool() = default;
 		};
 
 		struct GlobalAllocatorState
@@ -277,8 +258,8 @@ namespace ach
 					const std::size_t padding = (alignment - (header_size % alignment)) % alignment;
 					const std::size_t slot_size = (size + header_size + padding + alignment - 1) & ~(alignment - 1);
 
-					size_classes[i].size = size;
-					size_classes[i].slot = slot_size;
+					size_classes[i].size = static_cast<std::uint16_t>(size);
+					size_classes[i].slot = static_cast<std::uint16_t>(slot_size);
 					size_classes[i].blocks = PAGE_SIZE / slot_size;
 
 					free_lists[i] = nullptr;
@@ -288,12 +269,31 @@ namespace ach
 
 			~GlobalAllocatorState()
 			{
-				for (auto pool: pools)
+				for (auto pool : pools)
 				{
 					while (pool)
 					{
 						Pool *next = pool->next;
-						delete pool;
+						std::destroy_at(pool);
+
+						/* reconstruct the original mmap pointer; pool->memory points
+						 * to the data region so we need to subtract the size of the
+						 * Pool metadata to get back to the start of the mmap'd region */
+						constexpr auto pool_size = sizeof(Pool);
+						constexpr auto pool_align = alignof(Pool);
+						const std::size_t aligned_pool_size = (pool_size + pool_align - 1) & ~(pool_align - 1);
+						const std::size_t total_size = PAGE_SIZE + aligned_pool_size;
+
+						void *original_mem = reinterpret_cast<void*>(
+							reinterpret_cast<std::uintptr_t>(pool->memory) - aligned_pool_size
+						);
+
+#if defined(__unix__) || defined(__unix) || (defined(__APPLE__) && defined(__MACH__))
+						munmap(original_mem, total_size);
+#elif defined(_WIN32) || defined(_WIN64)
+						VirtualFree(original_mem, 0, MEM_RELEASE);
+#endif
+
 						pool = next;
 					}
 				}
@@ -309,7 +309,7 @@ namespace ach
 		static std::uint8_t get_size_class(size_t size)
 		{
 			if (size <= 64)
-				return (size - 1) >> 3;
+				return static_cast<std::uint8_t>((size - 1) >> 3);
 
 			size_t n = size - 1;
 			n |= n >> 1;
@@ -319,7 +319,7 @@ namespace ach
 			n |= n >> 16;
 			n |= n >> 32;
 
-			std::uint8_t class_index = (63 - __builtin_clzll(n + 1)) - 3;
+			const auto class_index = static_cast<std::uint8_t>((63 - __builtin_clzll(n + 1)) - 3);
 			if (class_index >= SIZE_CLASSES)
 				return SIZE_CLASSES - 1;
 
@@ -330,7 +330,33 @@ namespace ach
 		{
 			auto& state = get_global_state();
 
-			Pool *new_pool = new Pool(PAGE_SIZE);
+			/* memory layout: [padding][pool][page-sized data region]
+			 * `mmap` only guarantees page-aligned memory so we manually
+			 * align the Pool structure to meet its alignment requirements
+			 * before constructing it in order to avoid undefined behavior */
+			constexpr auto pool_size = sizeof(Pool);
+			constexpr auto pool_align = alignof(Pool);
+			const std::size_t aligned_pool_size = (pool_size + pool_align - 1) & ~(pool_align - 1);
+			const std::size_t total_size = PAGE_SIZE + aligned_pool_size;
+
+#if defined(__unix__) || defined(__unix) || (defined(__APPLE__) && defined(__MACH__))
+			void *mem = mmap(nullptr, total_size, PROT_READ | PROT_WRITE,
+							 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+			if (mem == MAP_FAILED)
+				throw std::bad_alloc();
+#elif defined(_WIN32) || defined(_WIN64)
+			void *mem = VirtualAlloc(nullptr, total_size,
+									MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+			if (!mem)
+				throw std::bad_alloc();
+#endif
+
+			auto aligned_ptr = reinterpret_cast<std::uintptr_t>(mem);
+			aligned_ptr = (aligned_ptr + pool_align - 1) & ~(pool_align - 1);
+
+			Pool *new_pool = std::construct_at(reinterpret_cast<Pool*>(aligned_ptr),
+								   static_cast<std::uint8_t*>(mem) + aligned_pool_size,
+								   PAGE_SIZE);
 			new_pool->next = state.pools[size_class];
 			state.pools[size_class] = new_pool;
 
