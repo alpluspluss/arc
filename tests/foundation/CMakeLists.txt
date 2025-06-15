@@ -4,3 +4,8 @@ arc_test(node-test
         SOURCES node.cpp
         LIBS Arc::Arc
 )
+
+arc_test(typed-data-test
+        SOURCES typed-data.cpp
+        LIBS Arc::Foundation
+)

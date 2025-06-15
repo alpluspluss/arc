@@ -21,7 +21,7 @@ if(Arc_FOUND)
 
     # set useful variables for the user
     # note to dev: add more libraries here when the component is ready
-    set(ARC_LIBRARIES Arc::Arc Arc::Support)
+    set(ARC_LIBRARIES Arc::Arc Arc::Support Arc::Foundation)
     set(ARC_INCLUDE_DIRS "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_INCLUDEDIR@")
 
     # this is here for backward compatibility with older versions of Arc

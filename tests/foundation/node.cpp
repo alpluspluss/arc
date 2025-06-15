@@ -10,7 +10,7 @@ protected:
 
 	void TearDown() override {}
 
-	arc::Node node;
+	arc::Node node = {};
 };
 
 TEST_F(NodeFixture, BasicProperties)

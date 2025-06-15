@@ -4,4 +4,4 @@ arc_library(Support SOURCES
         string-table.cpp
 )
 
-target_link_libraries(Support PUBLIC Threads::Threads)
+target_link_libraries(Support PRIVATE Threads::Threads)

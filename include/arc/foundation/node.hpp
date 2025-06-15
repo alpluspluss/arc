@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cstdint>
+#include <arc/foundation/typed-data.hpp>
 #include <arc/support/slice.hpp>
 #include <arc/support/string-table.hpp>
 
@@ -12,7 +13,7 @@ namespace arc
 	 * @brief Represents the type of operation an IR node performs
 	 * @note This enum is used to identify the type of operation of an IR node
 	 */
-	enum class NodeType
+	enum class NodeType : std::uint16_t
 	{
 		/** @brief Entry point of a basic block or function */
 		ENTRY,
@@ -188,7 +189,7 @@ namespace arc
 	}
 
 	/**
-	 *	@brief Represent an IR node.
+	 *	@brief Represent an IR node
 	 */
 	struct Node
 	{
@@ -196,11 +197,26 @@ namespace arc
 		u8slice<Node*> inputs = {};
 		/** @brief IR Nodes that has dependency on this node */
 		u8slice<Node*> users = {};
-		/** @brief String interning reference */
-		StringTable::StringId str_id = {};
 		/** @brief Type of the node */
 		NodeType ir_type = NodeType::ENTRY;
 		/** @brief Traits of the node */
 		NodeTraits traits = NodeTraits::NONE;
-	};
+		/** @brief Type-erased value storage */
+		TypedData value;
+		/** @brief Type of the value */
+		DataType type_kind;
+		/** @brief String interning reference */
+		StringTable::StringId str_id = {};
+
+		/* the packed attribute is used mainly to reduce the cache line
+		 * footprint from 72 bytes to 61 bytes. 72 bytes would span two cache lines,
+		 * requiring two memory fetches per node access.
+		 *
+		 * field ordering prioritizes hot data first: connectivity are accessed most
+		 * frequently to traverse the IR graph during the optimizations followed by
+		 * `NodeType` and `NodeTrait` as they are used to check if a node has special
+		 * rules or semantics e.g. VOLATILE, EXPORT, FUNCTION etc. value storage
+		 * and type of the value is last as they are only accessed in a fairly small
+		 * amount of passes that needs to see value such as SROA, AA, or CSE */
+	} __attribute__((packed));
 }
