@@ -5,7 +5,12 @@ arc_test(node-test
         LIBS Arc::Arc
 )
 
+arc_test(region-test
+        SOURCES region.cpp
+        LIBS Arc::Arc
+)
+
 arc_test(typed-data-test
         SOURCES typed-data.cpp
-        LIBS Arc::Foundation
+        LIBS Arc::Arc
 )

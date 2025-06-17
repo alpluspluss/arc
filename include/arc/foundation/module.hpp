@@ -50,7 +50,7 @@ namespace arc
 		 * @param parent Parent region; defaults to the root region
 		 * @return Pointer to the created region
 		 */
-		Region* create(std::string_view name, Region* parent = nullptr);
+		Region* create_region(std::string_view name, Region* parent = nullptr);
 
 		/**
 		 * @brief Find a function by name

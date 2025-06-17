@@ -29,7 +29,7 @@ namespace arc
 		return root_region;
 	}
 
-	Region *Module::create(std::string_view name, Region *parent)
+	Region *Module::create_region(std::string_view name, Region *parent)
 	{
 		if (!parent)
 			parent = root_region;
