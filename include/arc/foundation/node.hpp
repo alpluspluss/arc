@@ -9,6 +9,7 @@
 
 namespace arc
 {
+	class Region;
 	/**
 	 * @brief Represents the type of operation an IR node performs
 	 * @note This enum is used to identify the type of operation of an IR node
@@ -197,6 +198,8 @@ namespace arc
 		u8slice<Node*> inputs = {};
 		/** @brief IR Nodes that has dependency on this node */
 		u8slice<Node*> users = {};
+		/** @brief Parent region */
+		Region* parent = nullptr;
 		/** @brief Type of the node */
 		NodeType ir_type = NodeType::ENTRY;
 		/** @brief Traits of the node */
