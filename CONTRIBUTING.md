@@ -43,6 +43,36 @@ to note that all includes should be in the form of `#include <header>` or `#incl
 private headers in source directory (`src` or `lib`). Avoid using `#include <...>` for
 private headers as this can lead to confusion.
 
+All files are required to have license clause at the top of the file. Doxygen comments are
+exceptions to the all comments are lowercase" rule and is mandatory for public APIs. You
+can however, leave private APIs undocumented but the self-documenting code rule shall still apply.
+
+```cpp
+/* this project is part of the Arc project; licensed under the MIT license. see LICENSE for more info */
+
+#pragma once
+
+namespace arc
+{
+    /**
+     * @brief A class that shows Arc's codestyle
+     */
+    class ANewClass
+    {
+    public:
+        /**
+         * @brief ANewClass constructor
+         * @param name Name for the object
+         * @return The newly constructed object of type `ANewClass`
+         */
+        ANewClass(std::string_view name) = default;
+        
+    private:
+        void bar();
+    };
+}
+```
+
 #### Submitting Pull Requests
 
 We are currently not accepting new features, focusing instead on stabilizing

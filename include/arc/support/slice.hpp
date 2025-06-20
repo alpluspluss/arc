@@ -499,9 +499,11 @@ namespace arc
 				reserve(new_size);
 
 			allocator_type alloc;
-			for (size_type i = sz; i > index; --i)
-			{
-				alloc.construct(&dt[i + n - 1], std::move(dt[i - 1]));
+			for (size_type i = sz; i > index; --i) {
+				if constexpr (std::is_nothrow_move_constructible_v<T>)
+					alloc.construct(&dt[i + n - 1], std::move(dt[i - 1]));
+				else
+					alloc.construct(&dt[i + n - 1], dt[i - 1]);
 				alloc.destroy(&dt[i - 1]);
 			}
 
@@ -590,7 +592,7 @@ namespace arc
 	 * note: the size and storage is under the assumption that the
 	 * allocator is stateless */
 	template<typename T>
-	using u8slice = slice<T, std::uint8_t>; /* up to 255 elements; ~12 bytes storage */
+	using u8slice = slice<T, std::uint8_t>; /* up to 255 elements; ~10 bytes storage */
 
 	template<typename T>
 	using u16slice = slice<T>; /* up to 65535 elements; ~12 bytes storage */

@@ -57,7 +57,6 @@ cmake --build build
 ## Quick Start
 
 ```cpp
-#include <iostream>
 #include <arc/foundation/module.hpp>
 #include <arc/foundation/builder.hpp>
 
@@ -66,16 +65,13 @@ int main()
     auto module = arc::Module("Module");
     auto builder = arc::Builder(module);
     
-    auto* i32_t = builder.type<arc::DataType::I32>();
-    auto* ptr_i32_t = builder.pointer_t<arc::DataType::I32>();
-    
-    auto fn = builder.function("main", {}, i32_t);
-    fn.body([&]()
+    auto main_fn = builder.function("main)
+        .returns<arc::DataType::INT32>();
+        .body([&](auto& fb)
         {
-            auto* val1 = builder.literal(42);
-            auto* val2 = builder.literal(58);
-            auto* sum = builder.add(val1, val2);
-            builder.ret(sum);
+            auto val1 = fb.lit(42);
+            auto val2 = fb.lit(58);
+            return fb.add(val1, val2);
         });
     return 0;
 }
@@ -105,7 +101,7 @@ The project is in early development. The API is unstable and may subject to chan
 | Core Infrastructure | Complete    | Modules, nodes, type system         |
 | Memory Management   | Complete    | Thread-local allocation pools       |
 | Type System         | Complete    | Direct relationships, no registries |
-| Pass Infrastructure | Complete    | Dependency tracking, execution      |
+| Pass Infrastructure | In Progress | Dependency tracking, execution      |
 | Analysis Passes     | In Progress | Alias analysis, dominance           |
 | Transform Passes    | In Progress | DCE, CSE, vectorization             |
 | IPO Passes          | Planned     | Inlining, global optimizations      |
@@ -127,4 +123,4 @@ Please follow the [contributing guidelines](CONTRIBUTING.md) for code style and 
 ## Acknowledgements
 
 - [LLVM Project](https://github.com/llvm/llvm-project) for excellent documentation on compiler infrastructure
-- [Acheron library](https://github.com/deviceix/acheron/tree/main) for high-performance memory allocation
+- [Acheron library](https://github.com/deviceix/acheron/tree/main) for an awesome memory allocator.
