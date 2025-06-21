@@ -501,7 +501,6 @@ namespace arc
 	{
 		Region *old_region = builder.get_insertion_point();
 		builder.set_insertion_point(region);
-		builder.create_node(NodeType::ENTRY);
 		body_func(builder);
 		builder.set_insertion_point(old_region);
 		return function;
