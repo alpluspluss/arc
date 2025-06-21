@@ -42,17 +42,9 @@ TEST_F(TypedDataFixture, SetFloatData)
 	EXPECT_FLOAT_EQ(data.get<arc::DataType::FLOAT32>(), 3.14f);
 }
 
-TEST_F(TypedDataFixture, SetStringData)
-{
-	arc::StringTable::StringId str_id = 123;
-	data.set<arc::StringTable::StringId, arc::DataType::STRING>(str_id);
-	EXPECT_EQ(data.type(), arc::DataType::STRING);
-	EXPECT_EQ(data.get<arc::DataType::STRING>(), str_id);
-}
-
 TEST_F(TypedDataFixture, SetPointerData)
 {
-	arc::Node *dummy_node = reinterpret_cast<arc::Node *>(0x12345678);
+	auto *dummy_node = reinterpret_cast<arc::Node *>(0x12345678);
 
 	arc::DataTraits<arc::DataType::POINTER>::value ptr_data;
 	ptr_data.pointee = dummy_node;
@@ -170,47 +162,56 @@ TEST_F(TypedDataFixture, SelfReferenceStruct)
 
 TEST_F(TypedDataFixture, NestedStructInstance)
 {
-	arc::TypedData street_val, zip_val;
-	street_val.set<arc::StringTable::StringId, arc::DataType::STRING>(123);
-	zip_val.set<int, arc::DataType::INT32>(12345);
+    arc::TypedData street_val, zip_val;
 
-	arc::DataTraits<arc::DataType::STRUCT>::value addr_struct;
-	addr_struct.fields = arc::u8slice<std::tuple<arc::StringTable::StringId, arc::DataType, arc::TypedData> > {
-		{ 10, arc::DataType::STRING, std::move(street_val) },
-		{ 11, arc::DataType::INT32, std::move(zip_val) }
-	};
-	addr_struct.alignment = 4;
-	addr_struct.name = 50;
+    arc::DataTraits<arc::DataType::POINTER>::value street_ptr {};
+    street_ptr.pointee = nullptr;
+    street_ptr.addr_space = 0;
+    street_val.set<decltype(street_ptr), arc::DataType::POINTER>(std::move(street_ptr));
 
-	arc::TypedData addr_val, age_val;
-	addr_val.set<decltype(addr_struct), arc::DataType::STRUCT>(std::move(addr_struct));
-	age_val.set<int, arc::DataType::INT32>(30);
+    zip_val.set<int, arc::DataType::INT32>(12345);
 
-	arc::DataTraits<arc::DataType::STRUCT>::value person_struct;
-	person_struct.fields = arc::u8slice<std::tuple<arc::StringTable::StringId, arc::DataType, arc::TypedData> > {
-		{ 20, arc::DataType::STRUCT, std::move(addr_val) },
-		{ 21, arc::DataType::INT32, std::move(age_val) }
-	};
-	person_struct.alignment = 8;
-	person_struct.name = 60;
+    arc::DataTraits<arc::DataType::STRUCT>::value addr_struct;
+    addr_struct.fields = arc::u8slice<std::tuple<arc::StringTable::StringId, arc::DataType, arc::TypedData> > {
+       { 10, arc::DataType::POINTER, std::move(street_val) },
+       { 11, arc::DataType::INT32, std::move(zip_val) }
+    };
+    addr_struct.alignment = 4;
+    addr_struct.name = 50;
 
-	data.set<decltype(person_struct), arc::DataType::STRUCT>(std::move(person_struct));
-	EXPECT_EQ(data.type(), arc::DataType::STRUCT);
+    arc::TypedData addr_val, age_val;
+    addr_val.set<decltype(addr_struct), arc::DataType::STRUCT>(std::move(addr_struct));
+    age_val.set<int, arc::DataType::INT32>(30);
 
-	auto &person = data.get<arc::DataType::STRUCT>();
-	EXPECT_EQ(person.fields.size(), 2);
-	EXPECT_EQ(person.name, 60);
+    arc::DataTraits<arc::DataType::STRUCT>::value person_struct;
+    person_struct.fields = arc::u8slice<std::tuple<arc::StringTable::StringId, arc::DataType, arc::TypedData> > {
+       { 20, arc::DataType::STRUCT, std::move(addr_val) },
+       { 21, arc::DataType::INT32, std::move(age_val) }
+    };
+    person_struct.alignment = 8;
+    person_struct.name = 60;
 
-	EXPECT_EQ(std::get<1>(person.fields[0]), arc::DataType::STRUCT);
-	auto &nested_addr = std::get<2>(person.fields[0]).get<arc::DataType::STRUCT>();
-	EXPECT_EQ(nested_addr.name, 50);
-	EXPECT_EQ(nested_addr.fields.size(), 2);
+    data.set<decltype(person_struct), arc::DataType::STRUCT>(std::move(person_struct));
+    EXPECT_EQ(data.type(), arc::DataType::STRUCT);
 
-	EXPECT_EQ(std::get<2>(nested_addr.fields[0]).get<arc::DataType::STRING>(), 123);
-	EXPECT_EQ(std::get<2>(nested_addr.fields[1]).get<arc::DataType::INT32>(), 12345);
+    auto &person = data.get<arc::DataType::STRUCT>();
+    EXPECT_EQ(person.fields.size(), 2);
+    EXPECT_EQ(person.name, 60);
 
-	EXPECT_EQ(std::get<1>(person.fields[1]), arc::DataType::INT32);
-	EXPECT_EQ(std::get<2>(person.fields[1]).get<arc::DataType::INT32>(), 30);
+    EXPECT_EQ(std::get<1>(person.fields[0]), arc::DataType::STRUCT);
+    auto &nested_addr = std::get<2>(person.fields[0]).get<arc::DataType::STRUCT>();
+    EXPECT_EQ(nested_addr.name, 50);
+    EXPECT_EQ(nested_addr.fields.size(), 2);
+
+    // Check the pointer field instead of string
+    EXPECT_EQ(std::get<1>(nested_addr.fields[0]), arc::DataType::POINTER);
+    auto &street_pointer = std::get<2>(nested_addr.fields[0]).get<arc::DataType::POINTER>();
+    EXPECT_EQ(street_pointer.addr_space, 0);
+
+    EXPECT_EQ(std::get<2>(nested_addr.fields[1]).get<arc::DataType::INT32>(), 12345);
+
+    EXPECT_EQ(std::get<1>(person.fields[1]), arc::DataType::INT32);
+    EXPECT_EQ(std::get<2>(person.fields[1]).get<arc::DataType::INT32>(), 30);
 }
 
 TEST_F(TypedDataFixture, TypeCheck)

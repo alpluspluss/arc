@@ -26,7 +26,7 @@ TEST_F(RegionFixture, BasicProperties)
 	EXPECT_EQ(root->name(), REGION_TEST_NAME);
 	EXPECT_EQ(&root->module(), module.get());
 	EXPECT_EQ(root->parent(), module->root());
-	EXPECT_TRUE(root->nodes().empty());
+	EXPECT_FALSE(root->nodes().empty()); /* ENTRY is default constructed */
 	EXPECT_TRUE(root->children().empty());
 }
 

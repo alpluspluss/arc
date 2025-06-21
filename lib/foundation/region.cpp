@@ -6,10 +6,15 @@
 
 namespace arc
 {
-	Region::Region(std::string_view name, Module &mod, Region *parent)
+	Region::Region(const std::string_view name, Module &mod, Region *parent)
 		: mod(mod), prnt(parent)
 	{
 		region_id = mod.intern_str(name);
+		ach::allocator<Node> a;
+		Node* n = a.allocate(1);
+		std::construct_at(n);
+		n->ir_type = NodeType::ENTRY;
+		ns.push_back(n);
 	}
 
 	Region::~Region() = default;
@@ -56,7 +61,13 @@ namespace arc
 
 		if (std::ranges::find(ns, node) == ns.end())
 		{
-			ns.push_back(node);
+			if (node->ir_type == NodeType::ENTRY && !ns.empty() && ns[0]->ir_type == NodeType::ENTRY)
+				return;
+
+			if (node->ir_type == NodeType::ENTRY)
+				ns.insert(ns.begin(), node);
+			else
+				ns.push_back(node);
 			node->parent = this;
 		}
 	}
@@ -96,7 +107,10 @@ namespace arc
 			if (node->parent && node->parent != this)
 				node->parent->remove(node);
 
-			ns.insert(it, node);
+			if (it == ns.begin() && (*it)->ir_type == NodeType::ENTRY)
+				ns.insert(it + 1, node); /* insert after ENTRY */
+			else
+				ns.insert(it, node);
 			node->parent = this;
 		}
 	}
@@ -125,7 +139,10 @@ namespace arc
 		if (node->parent && node->parent != this)
 			node->parent->remove(node);
 
-		ns.insert(ns.begin(), node);
+		if (!ns.empty() && ns[0]->ir_type == NodeType::ENTRY)
+			ns.insert(ns.begin() + 1, node);
+		else
+			ns.insert(ns.begin(), node);
 		node->parent = this;
 	}
 

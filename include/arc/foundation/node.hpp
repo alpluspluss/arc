@@ -10,6 +10,7 @@
 namespace arc
 {
 	class Region;
+
 	/**
 	 * @brief Represents the type of operation an IR node performs
 	 * @note This enum is used to identify the type of operation of an IR node
@@ -78,8 +79,8 @@ namespace arc
 		PTR_STORE,
 		/** @brief Pointer arithmetic; ptr + offset */
 		PTR_ADD,
-		/** @brief Type reinterpretion cast */
-		REINTERPRET_CAST,
+		/** @brief Type cast */
+		CAST,
 		/** @brief Thread-safe memory load */
 		ATOMIC_LOAD,
 		/** @brief Thread-safe memory store */
@@ -124,20 +125,16 @@ namespace arc
 	{
 		/** @brief No special traits */
 		NONE = 0,
-		/** @brief Represents an entity with static traits; Internal linkage */
-		STATIC = 1 << 0,
-		/** @brief Represents an expression that can be evaluated at compile time */
-		CONSTEXPR = 1 << 1,
-		/** @brief Represents an external entity; External linkage */
-		EXTERN = 1 << 2,
+		/** @brief Represents an external entity; Behaves similar to C/C++'s extern keyword */
+		EXTERN = 1 << 0,
 		/** @brief Represents a driver function; entry point of the program */
-		DRIVER = 1 << 3,
-		/** @brief Represents a symbol to resolve across modules */
-		EXPORT = 1 << 4,
+		DRIVER = 1 << 1,
+		/** @brief Represents a symbol to resolve across modules; External linkage */
+		EXPORT = 1 << 2,
 		/** @brief Represents a node that should not be optimized e.g. C/C++'s `volatile` */
-		VOLATILE = 1 << 5,
+		VOLATILE = 1 << 3,
 		/** @brief Represents a read-only type; This goes to an executable's section .rodata */
-		READONLY = 1 << 6
+		READONLY = 1 << 4
 	};
 
 	inline NodeTraits operator|(NodeTraits lhs, NodeTraits rhs)
@@ -192,7 +189,7 @@ namespace arc
 	/**
 	 *	@brief Represent an IR node
 	 */
-	struct Node
+	struct alignas(8) Node
 	{
 		/** @brief IR nodes that are depended on this node */
 		u8slice<Node*> inputs = {};
@@ -212,7 +209,7 @@ namespace arc
 		StringTable::StringId str_id = {};
 
 		/* the packed attribute is used mainly to reduce the cache line
-		 * footprint from 72 bytes to 61 bytes. 72 bytes would span two cache lines,
+		 * footprint from 72 bytes to 64 bytes. 72 bytes would span two cache lines,
 		 * requiring two memory fetches per node access.
 		 *
 		 * field ordering prioritizes hot data first: connectivity are accessed most
