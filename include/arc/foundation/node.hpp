@@ -189,7 +189,7 @@ namespace arc
 	/**
 	 *	@brief Represent an IR node
 	 */
-	struct Node
+	struct alignas(8) Node
 	{
 		/** @brief IR nodes that are depended on this node */
 		u8slice<Node*> inputs = {};
@@ -209,7 +209,7 @@ namespace arc
 		StringTable::StringId str_id = {};
 
 		/* the packed attribute is used mainly to reduce the cache line
-		 * footprint from 72 bytes to 61 bytes. 72 bytes would span two cache lines,
+		 * footprint from 72 bytes to 64 bytes. 72 bytes would span two cache lines,
 		 * requiring two memory fetches per node access.
 		 *
 		 * field ordering prioritizes hot data first: connectivity are accessed most
