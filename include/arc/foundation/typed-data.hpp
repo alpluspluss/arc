@@ -29,8 +29,7 @@ namespace arc
 		ARRAY,
 		STRUCT,
 		FUNCTION,
-		VECTOR,
-		STRING
+		VECTOR
 	};
 
 	template<DataType /* T */>
@@ -154,15 +153,6 @@ namespace arc
 	};
 
 	/**
-	 * @brief Specialization for `DataType::STRING`
-	 */
-	template<>
-	struct DataTraits<DataType::STRING>
-	{
-		using value = StringTable::StringId;
-	};
-
-	/**
 	 * @brief Specialization for `DataType::VECTOR`
 	 */
 	template<>
@@ -249,10 +239,10 @@ namespace arc
 	 */
 	class TypedData
 	{
-		/* Node.type_kind determines what's stored here. DataTraits<T>::value
+		/* Node::type_kind determines what's stored here. DataTraits<T>::value
 		 * defines the storage layout. this separation allows the same DataType
 		 * to describe both type contracts and actual values, disambiguated by
-		 * Node.ir_type (TYPE vs LIT vs operations) */
+		 * Node::ir_type (TYPE vs LIT vs operations) */
 	public:
 		/**
 		 * @brief Default constructor. Creates DataType::VOID type
@@ -306,7 +296,6 @@ case DataType::dt: return std::is_same_v<T, typename DataTraits<DataType::dt>::v
 				ARC_TYPEDATA_CHECK(STRUCT)
 				ARC_TYPEDATA_CHECK(FUNCTION)
 				ARC_TYPEDATA_CHECK(VECTOR)
-				ARC_TYPEDATA_CHECK(STRING)
 #undef ARC_TYPEDATA_CHECK
 
 				default:
@@ -408,7 +397,6 @@ case DataType::dt: return std::is_same_v<T, typename DataTraits<DataType::dt>::v
 			ARC_CHECK_ALIGN(UINT64)
 			ARC_CHECK_ALIGN(FLOAT32)
 			ARC_CHECK_ALIGN(FLOAT64)
-			ARC_CHECK_ALIGN(STRING)
 			ARC_CHECK_ALIGN(VECTOR)
 			ARC_CHECK_ALIGN(POINTER)
 			ARC_CHECK_ALIGN(ARRAY)

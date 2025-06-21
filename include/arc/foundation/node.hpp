@@ -78,8 +78,8 @@ namespace arc
 		PTR_STORE,
 		/** @brief Pointer arithmetic; ptr + offset */
 		PTR_ADD,
-		/** @brief Type reinterpretion cast */
-		REINTERPRET_CAST,
+		/** @brief Type cast */
+		CAST,
 		/** @brief Thread-safe memory load */
 		ATOMIC_LOAD,
 		/** @brief Thread-safe memory store */
