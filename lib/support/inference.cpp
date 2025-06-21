@@ -23,7 +23,6 @@ namespace arc
 				if (lhs_vec.elem_type == rhs_vec.elem_type)
 					return true;
 
-				/* promote element types */
 				const DataType promoted_elem = infer_primitive_types(lhs_vec.elem_type, rhs_vec.elem_type);
 				if (promoted_elem == DataType::VOID)
 					return false;
@@ -72,8 +71,13 @@ namespace arc
 		}
 
 		/* delegate to primitive type inference and promote both operands to their common types;
-		 * no DataType::VOID check here because `infer_primitive_types` already filters it */
+		 * DataType::VOID check here because `infer_primitive_types` returns it. Resharper seems to
+		 * believe this has already been checked for some reason */
 		const DataType promoted_type = infer_primitive_types(lhs_type, rhs_type);
+		// ReSharper disable once CppDFAConstantConditions
+		if (promoted_type == DataType::VOID)
+			// ReSharper disable once CppDFAUnreachableCode
+			return false;
 		lhs->type_kind = promoted_type;
 		rhs->type_kind = promoted_type;
 		return true;
@@ -122,6 +126,11 @@ namespace arc
 		if (get_integer_rank(rhs) < get_integer_rank(DataType::INT32))
 			rhs = DataType::INT32;
 
+		// ReSharper disable once CppDFAConstantConditions
+		if (lhs == rhs)
+			// ReSharper disable once CppDFAUnreachableCode
+			return lhs;
+
 		const int lhs_rank = get_integer_rank(lhs);
 		const int rhs_rank = get_integer_rank(rhs);
 		if (lhs_rank == rhs_rank)
@@ -140,77 +149,5 @@ namespace arc
 		}
 
 		return (lhs_rank > rhs_rank) ? lhs : rhs;
-	}
-
-	constexpr bool is_integer_t(const DataType type) noexcept
-	{
-		switch (type)
-		{
-			case DataType::INT8:
-			case DataType::INT16:
-			case DataType::INT32:
-			case DataType::INT64:
-			case DataType::UINT8:
-			case DataType::UINT16:
-			case DataType::UINT32:
-			case DataType::UINT64:
-				return true;
-			default:
-				return false;
-		}
-	}
-
-	constexpr bool is_float_t(const DataType type) noexcept
-	{
-		return type == DataType::FLOAT32 || type == DataType::FLOAT64;
-	}
-
-	constexpr bool is_signed_integer_t(const DataType type) noexcept
-	{
-		switch (type)
-		{
-			case DataType::INT8:
-			case DataType::INT16:
-			case DataType::INT32:
-			case DataType::INT64:
-				return true;
-			default:
-				return false;
-		}
-	}
-
-	constexpr bool is_unsigned_integer_t(const DataType type) noexcept
-	{
-		switch (type)
-		{
-			case DataType::UINT8:
-			case DataType::UINT16:
-			case DataType::UINT32:
-			case DataType::UINT64:
-				return true;
-			default:
-				return false;
-		}
-	}
-
-	constexpr int get_integer_rank(const DataType type) noexcept
-	{
-		switch (type)
-		{
-			case DataType::INT8:
-			case DataType::UINT8:
-				return 0;
-			case DataType::INT16:
-			case DataType::UINT16:
-				return 1;
-			case DataType::INT32:
-			case DataType::UINT32:
-				return 2;
-			case DataType::INT64:
-			case DataType::UINT64:
-				return 3;
-			default:
-				return -1;
-		}
 	}
 }
