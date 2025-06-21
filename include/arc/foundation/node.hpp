@@ -124,20 +124,16 @@ namespace arc
 	{
 		/** @brief No special traits */
 		NONE = 0,
-		/** @brief Represents an entity with static traits; Internal linkage */
-		STATIC = 1 << 0,
-		/** @brief Represents an expression that can be evaluated at compile time */
-		CONSTEXPR = 1 << 1,
-		/** @brief Represents an external entity; External linkage */
-		EXTERN = 1 << 2,
+		/** @brief Represents an external entity; Behaves similar to C/C++'s extern keyword */
+		EXTERN = 1 << 0,
 		/** @brief Represents a driver function; entry point of the program */
-		DRIVER = 1 << 3,
-		/** @brief Represents a symbol to resolve across modules */
-		EXPORT = 1 << 4,
+		DRIVER = 1 << 1,
+		/** @brief Represents a symbol to resolve across modules; External linkage */
+		EXPORT = 1 << 2,
 		/** @brief Represents a node that should not be optimized e.g. C/C++'s `volatile` */
-		VOLATILE = 1 << 5,
+		VOLATILE = 1 << 3,
 		/** @brief Represents a read-only type; This goes to an executable's section .rodata */
-		READONLY = 1 << 6
+		READONLY = 1 << 4
 	};
 
 	inline NodeTraits operator|(NodeTraits lhs, NodeTraits rhs)

@@ -162,7 +162,7 @@ namespace arc
 		{
 			/** @brief The elements of the vector type */
 			DataType elem_type;
-
+			std::uint32_t lane_count;
 			bool operator==(const value &other) const
 			{
 				return elem_type == other.elem_type;
