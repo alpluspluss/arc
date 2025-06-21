@@ -41,6 +41,7 @@ MOD:    [lhs, rhs]
 *Rationale: Mathematical notation convention (a + b)*
 
 ### Comparison Operations
+
 **Pattern**: `[left_operand, right_operand] → bool`
 ```
 EQ:     [lhs, rhs]
@@ -50,6 +51,7 @@ GT:     [lhs, rhs]
 *Rationale: Matches mathematical comparison (a < b)*
 
 ### Memory Operations
+
 **Pattern**: `[data, destination]` for stores, `[source] → data` for loads
 ```
 STORE:      [value, location]     /* what you're storing, where it goes */
@@ -60,6 +62,7 @@ PTR_LOAD:   [pointer]             /* same pattern, different addressing */
 *Rationale: Store follows assignment syntax (location = value), load is simple dereference*
 
 ### Pointer Operations
+
 **Pattern**: Primary pointer first, then modifiers
 ```
 PTR_ADD:   [base_pointer, offset]    /* base + offset */
@@ -68,6 +71,7 @@ ADDR_OF:   [variable]                /* &variable */
 *Rationale: Base pointer is the primary data being operated on*
 
 ### Control Flow Operations
+
 **Pattern**: Decision criteria first, then destinations
 ```
 BRANCH:    [condition, true_target, false_target]    /* if-then-else order */
@@ -78,6 +82,7 @@ INVOKE:    [function, normal_target, except_target, arg1, arg2, ...]
 *Rationale:  Fixed target positions to enable O(1) parsing while variable arguments go at the end*
 
 ### Vector Operations
+
 **Pattern**: Vector data first, then selectors/modifiers
 ```
 VECTOR_BUILD:   [elem0, elem1, elem2, ...]     /* elements in order */
@@ -87,6 +92,7 @@ VECTOR_SPLAT:   [scalar]                       /* what you're replicating */
 *Rationale: Primary data (vector/scalar) comes first, indices are selectors*
 
 ### Atomic Operations
+
 **Pattern**: Memory location first, then data, then ordering
 ```
 ATOMIC_LOAD:  [address, ordering]                    /* where, how */
@@ -96,6 +102,7 @@ ATOMIC_CAS:   [address, expected, desired, ordering] /* where, compare, swap, ho
 *Rationale: Memory location is primary, ordering is metadata*
 
 ### Cast Operations
+
 **Pattern**: `[source] → target_type`
 ```
 CAST: [value]    /* type is specified by node's type_kind field */
@@ -103,6 +110,7 @@ CAST: [value]    /* type is specified by node's type_kind field */
 *Rationale: Simple transformation of one value*
 
 ### Allocation Operations
+
 **Pattern**: Size specification leads to allocation
 ```
 ALLOC: [size]    /* how much to allocate */

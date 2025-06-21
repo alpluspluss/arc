@@ -15,7 +15,7 @@ namespace arc
 	 * i. Integer types smaller than INT32 are promoted to INT32
 	 * ii. Mixed signed/unsigned promotes to next larger signed type
 	 * iii. Float operations prefer FLOAT64 unless both operands are FLOAT32
-	 * iv. ECTOR operations promote element types using same rules
+	 * iv. VECTOR operations promote element types using same rules
 	 * v. POINTER types require explicit casts
 	 *
 	 * @param lhs Left operand node (modified in-place)

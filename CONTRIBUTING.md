@@ -44,7 +44,7 @@ private headers in source directory (`src` or `lib`). Avoid using `#include <...
 private headers as this can lead to confusion.
 
 All files are required to have license clause at the top of the file. Doxygen comments are
-exceptions to the all comments are lowercase" rule and is mandatory for public APIs. You
+exceptions to the "all comments are lowercase" rule and is mandatory for public APIs. You
 can however, leave private APIs undocumented but the self-documenting code rule shall still apply.
 
 ```cpp
