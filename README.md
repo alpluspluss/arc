@@ -65,7 +65,7 @@ int main()
     auto module = arc::Module("Module");
     auto builder = arc::Builder(module);
     
-    auto main_fn = builder.function("main)
+    auto main_fn = builder.function("main")
         .returns<arc::DataType::INT32>();
         .body([&](auto& fb)
         {
