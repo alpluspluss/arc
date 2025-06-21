@@ -7,6 +7,7 @@
 #include <vector>
 #include <arc/foundation/module.hpp>
 #include <arc/foundation/node.hpp>
+#include <arc/foundation/region.hpp>
 #include <arc/foundation/typed-data.hpp>
 
 namespace arc
@@ -203,6 +204,16 @@ namespace arc
 		Node *jump(Node *target);
 
 		/**
+		 * @brief Create function call with exception handling
+		 * @param function Function to call
+		 * @param args Function arguments
+		 * @param normal_target Target for normal execution
+		 * @param except_target Target for exception handling
+		 * @return Node representing the invoke operation
+		 */
+		Node *invoke(Node *function, const std::vector<Node *> &args, Node *normal_target, Node *except_target);
+
+		/**
 		 * @brief Create a vector build node from scalar elements
 		 * @param elements Scalar elements to combine into vector
 		 * @return Node representing the vector
@@ -224,6 +235,15 @@ namespace arc
 		 * @return Node representing the extracted scalar
 		 */
 		Node* vector_extract(Node* vector, std::uint32_t index);
+
+		/**
+		 * @brief Create type cast node
+		 * @tparam TargetType Target type for the cast
+		 * @param value Value to cast
+		 * @return Node representing the cast operation
+		 */
+		template<DataType TargetType>
+		Node* cast(Node* value);
 
 	private:
 		Module &module;
@@ -282,13 +302,13 @@ namespace arc
 		 * @brief Mark function as extern (imported)
 		 * @return Reference to this builder for chaining
 		 */
-		FunctionBuilder &extern_();
+		FunctionBuilder &imported();
 
 		/**
 		 * @brief Mark function as volatile (no optimization)
 		 * @return Reference to this builder for chaining
 		 */
-		FunctionBuilder &volatile_();
+		FunctionBuilder &keep();
 
 		/**
 		 * @brief Add a parameter to the function
@@ -344,6 +364,15 @@ namespace arc
 		 */
 		Node *operator()(const std::function<Node*(Builder &)> &block_func);
 
+		/**
+		 * @brief Get the entry node for this block
+		 * @return Entry node for control flow targeting
+		 */
+		Node* entry() const
+		{
+			return region->entry();
+		}
+
 	private:
 		Builder &builder;
 		Region *region;
@@ -384,6 +413,22 @@ namespace arc
 		 */
 		Node *through(Node *pointer);
 
+		/**
+		 * @brief Store to memory location atomically
+		 * @param location Memory location
+		 * @param ordering Memory ordering (optional, defaults to SEQ_CST)
+		 * @return Atomic store node
+		 */
+		Node *to_atomic(Node *location, AtomicOrdering ordering = AtomicOrdering::SEQ_CST);
+
+		/**
+		 * @brief Store through pointer atomically
+		 * @param pointer Pointer to store through
+		 * @param ordering Memory ordering (optional, defaults to SEQ_CST)
+		 * @return Atomic store node
+		 */
+		Node *through_atomic(Node *pointer, AtomicOrdering ordering = AtomicOrdering::SEQ_CST);
+
 	private:
 		Builder &builder;
 		Node *value;
@@ -411,14 +456,14 @@ namespace arc
 	}
 
 	template<DataType ReturnType>
-	FunctionBuilder<ReturnType> &FunctionBuilder<ReturnType>::extern_()
+	FunctionBuilder<ReturnType> &FunctionBuilder<ReturnType>::imported()
 	{
 		function->traits |= NodeTraits::EXTERN;
 		return *this;
 	}
 
 	template<DataType ReturnType>
-	FunctionBuilder<ReturnType> &FunctionBuilder<ReturnType>::volatile_()
+	FunctionBuilder<ReturnType> &FunctionBuilder<ReturnType>::keep()
 	{
 		function->traits |= NodeTraits::VOLATILE;
 		return *this;
@@ -556,6 +601,17 @@ namespace arc
 	{
 		Node *node = create_node(NodeType::ALLOC, ElementType);
 		connect_inputs(node, { count });
+		return node;
+	}
+
+	template<DataType TargetType>
+	Node* Builder::cast(Node* value)
+	{
+		if (!value)
+			throw std::invalid_argument("cast value cannot be null");
+
+		Node* node = create_node(NodeType::CAST, TargetType);
+		connect_inputs(node, {value});
 		return node;
 	}
 

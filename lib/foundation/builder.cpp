@@ -74,11 +74,8 @@ namespace arc
 		if (pointer->type_kind != DataType::POINTER)
 			throw std::invalid_argument("ptr_store requires pointer type");
 
-		const auto&[pointee, addr_space] = pointer->value.get<DataType::POINTER>();
-		if (!pointee)
-			throw std::invalid_argument("pointee node needs to be valid");
-
-		if (value->type_kind != pointee->type_kind)
+		const auto& ptr_data = pointer->value.get<DataType::POINTER>();
+		if (ptr_data.pointee && value->type_kind != ptr_data.pointee->type_kind)
 			throw std::invalid_argument("value type must match pointer pointee type");
 
 		Node* node = create_node(NodeType::PTR_STORE);
@@ -222,6 +219,26 @@ namespace arc
 		return node;
 	}
 
+	Node *Builder::invoke(Node *function, const std::vector<Node *> &args, Node *normal_target, Node *except_target)
+	{
+		if (!function || !normal_target || !except_target)
+			throw std::invalid_argument("invoke operands cannot be null");
+
+		if (function->type_kind != DataType::FUNCTION)
+			throw std::invalid_argument("invoke requires function type");
+
+		if (normal_target->ir_type != NodeType::ENTRY || except_target->ir_type != NodeType::ENTRY)
+			throw std::invalid_argument("invoke targets must be ENTRY nodes");
+
+		/* return type will be resolved from function signature */
+		/* operand order: [ function, normal_target, except_target, args... ] */
+		Node *node = create_node(NodeType::INVOKE, DataType::VOID);
+		std::vector inputs = { function, normal_target, except_target };
+		inputs.insert(inputs.end(), args.begin(), args.end());
+		connect_inputs(node, inputs);
+		return node;
+	}
+
 	Node* Builder::vector_build(const std::vector<Node*>& elements)
 	{
 	    if (elements.empty())
@@ -349,6 +366,32 @@ namespace arc
 
 		Node *node = builder.create_node(NodeType::PTR_STORE);
 		Builder::connect_inputs(node, { value, pointer });
+		return node;
+	}
+
+	Node *StoreHelper::to_atomic(Node *location, AtomicOrdering ordering)
+	{
+		if (!location)
+			throw std::invalid_argument("atomic store location cannot be null");
+
+		Node *address = builder.addr_of(location);
+		Node *node = builder.create_node(NodeType::ATOMIC_STORE);
+		Node *ordering_node = builder.lit(static_cast<std::uint8_t>(ordering));
+		Builder::connect_inputs(node, { value, address, ordering_node });
+		return node;
+	}
+
+	Node *StoreHelper::through_atomic(Node *pointer, AtomicOrdering ordering)
+	{
+		if (!pointer)
+			throw std::invalid_argument("atomic store pointer cannot be null");
+
+		if (pointer->type_kind != DataType::POINTER)
+			throw std::invalid_argument("through_atomic requires pointer type");
+
+		Node *node = builder.create_node(NodeType::ATOMIC_STORE);
+		Node *ordering_node = builder.lit(static_cast<std::uint8_t>(ordering));
+		Builder::connect_inputs(node, { value, pointer, ordering_node });
 		return node;
 	}
 }

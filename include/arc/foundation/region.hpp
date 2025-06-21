@@ -138,6 +138,23 @@ namespace arc
 		 */
 		bool replace(Node* old_n, Node* new_n, bool rewire = true);
 
+		/**
+		 * @brief Return the entry node inside region
+		 * @return The ENTRY node of the region
+		 */
+		Node* entry()
+		{
+			if (!ns.empty() && ns[0]->ir_type == NodeType::ENTRY)
+				return ns[0];
+
+			const auto it = std::ranges::find_if(ns,
+			                               [](const Node* node)
+			                               {
+				                               return node && node->ir_type == NodeType::ENTRY;
+			                               });
+			return it != ns.end() ? *it : nullptr;
+		}
+
 	private:
 		std::vector<Region*> childs; /** @brief Children regions */
 		std::vector<Node*> ns; /** @brief Nodes the region contains */

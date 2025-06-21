@@ -10,6 +10,7 @@
 namespace arc
 {
 	class Region;
+
 	/**
 	 * @brief Represents the type of operation an IR node performs
 	 * @note This enum is used to identify the type of operation of an IR node
