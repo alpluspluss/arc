@@ -105,7 +105,7 @@ The project is in early development. The API is unstable and may subject to chan
 | Analysis Passes     | In Progress | Alias analysis, dominance           |
 | Transform Passes    | In Progress | DCE, CSE, vectorization             |
 | IPO Passes          | Planned     | Inlining, global optimizations      |
-| Code Generation     | Planned     | LLVM backend integration            |
+| Code Generation     | Planned     | Target and Object File Generation   |
 
 ## License
 
