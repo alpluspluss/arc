@@ -20,6 +20,34 @@ namespace arc
 	class BlockBuilder;
 
 	/**
+	 * @brief Function traits for FunctionBuilder
+	 */
+	template<typename F>
+	struct FunctionTraits;
+
+	template<typename R, typename... Args>
+	struct FunctionTraits<R(*)(Args...)>
+	{
+		static constexpr auto arity = sizeof...(Args);
+		using return_type = R;
+
+		template<std::size_t N>
+		using arg = std::tuple_element_t<N, std::tuple<Args...>>;
+	};
+
+	template<typename R, typename C, typename... Args>
+	struct FunctionTraits<R(C::*)(Args...) const>
+	{
+		static constexpr std::size_t arity = sizeof...(Args);
+		using return_type = R;
+
+		template<std::size_t N>
+		using arg = std::tuple_element_t<N, std::tuple<Args...>>;
+	};
+
+	template<typename F>
+	struct FunctionTraits : FunctionTraits<decltype(&F::operator())> {};
+	/**
 	 * @brief Main IR builder class for constructing Arc IR nodes and regions
 	 */
 	class Builder
@@ -274,7 +302,7 @@ namespace arc
 	/**
 	 * @brief Builder for function definitions
 	 */
-	template<DataType>
+	template<DataType /* ReturnType */>
 	class FunctionBuilder
 	{
 	public:
@@ -317,29 +345,37 @@ namespace arc
 		 * @return Node representing the parameter
 		 */
 		template<DataType ParamType>
-		Node *param(std::string_view name);
+		FunctionBuilder& param(std::string_view name);
 
 		/**
 		 * @brief Add a pointer parameter to the function
 		 * @tparam PointeeType Type that the pointer points to
 		 * @param name Parameter name
+		 * @param pointee_node The node the parameter points to
 		 * @return Node representing the pointer parameter
 		 */
 		template<DataType PointeeType>
-		Node *param_ptr(std::string_view name);
+		FunctionBuilder& param_ptr(std::string_view name, Node* pointee_node);
 
 		/**
 		 * @brief Define the function body
 		 * @param body_func Lambda defining the function body
 		 * @return The function node
 		 */
-		Node *body(const std::function<Node*(Builder &)> &body_func);
+		template<typename F>
+		Node *body(F&& body_func);
 
 	private:
 		Builder &builder;
 		Node *function;
 		Region *region;
 		std::vector<Node *> parameters;
+
+		template<typename F, std::size_t... Is>
+		auto call_with_params(F&& func, std::index_sequence<Is...>)
+		{
+			return func(builder, parameters[Is]...);
+		}
 	};
 
 	/**
@@ -376,6 +412,7 @@ namespace arc
 	private:
 		Builder &builder;
 		Region *region;
+
 	};
 
 	/**
@@ -471,37 +508,51 @@ namespace arc
 
 	template<DataType ReturnType>
 	template<DataType ParamType>
-	Node *FunctionBuilder<ReturnType>::param(std::string_view name)
+	FunctionBuilder<ReturnType>& FunctionBuilder<ReturnType>::param(std::string_view name)
 	{
 		Node *param_node = builder.create_node(NodeType::PARAM, ParamType);
 		param_node->str_id = builder.module.intern_str(name);
 		parameters.push_back(param_node);
-		return param_node;
+		return *this;
 	}
 
 	template<DataType ReturnType>
-	template<DataType>
-	Node *FunctionBuilder<ReturnType>::param_ptr(const std::string_view name)
+	template<DataType PointeeType>
+	FunctionBuilder<ReturnType>& FunctionBuilder<ReturnType>::param_ptr(const std::string_view name, Node* pointee_node)
 	{
+		if (!pointee_node)
+			throw std::invalid_argument("pointee node cannot be null");
+
+		if (pointee_node->type_kind != PointeeType)
+			throw std::invalid_argument("pointee node type must match template parameter");
+
 		Node *param_node = builder.create_node(NodeType::PARAM, DataType::POINTER);
 		param_node->str_id = builder.module.intern_str(name);
 
-		/* set up pointer type data */
 		DataTraits<DataType::POINTER>::value ptr_data = {};
-		ptr_data.pointee = nullptr; /* will be resolved during type checking */
+		ptr_data.pointee = pointee_node;
 		ptr_data.addr_space = 0;
 		param_node->value.set<decltype(ptr_data), DataType::POINTER>(ptr_data);
 
 		parameters.push_back(param_node);
-		return param_node;
+		return *this;
 	}
 
 	template<DataType ReturnType>
-	Node *FunctionBuilder<ReturnType>::body(const std::function<Node*(Builder &)> &body_func)
+	template<typename F>
+	Node *FunctionBuilder<ReturnType>::body(F&& body_func)
 	{
+		using traits = FunctionTraits<std::decay_t<F>>;
+		constexpr std::size_t expected_params = traits::arity - 1;
+
+		if (parameters.size() != expected_params)
+			throw std::invalid_argument("lambda parameter count doesn't match declared parameters");
+
 		Region *old_region = builder.get_insertion_point();
 		builder.set_insertion_point(region);
-		body_func(builder);
+		call_with_params(std::forward<F>(body_func),
+									  std::make_index_sequence<expected_params>{});
+
 		builder.set_insertion_point(old_region);
 		return function;
 	}

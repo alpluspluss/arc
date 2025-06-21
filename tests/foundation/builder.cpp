@@ -160,20 +160,16 @@ TEST_F(BuilderFixture, VectorOperations)
 
 TEST_F(BuilderFixture, FunctionBuilder)
 {
-	auto func_builder = builder->function<arc::DataType::INT32>("test_func");
-	auto *param1 = func_builder.param<arc::DataType::INT32>("x");
-	auto *param2 = func_builder.param<arc::DataType::INT32>("y");
-
-	EXPECT_EQ(param1->ir_type, arc::NodeType::PARAM);
-	EXPECT_EQ(param1->type_kind, arc::DataType::INT32);
-	EXPECT_EQ(param2->ir_type, arc::NodeType::PARAM);
-	EXPECT_EQ(param2->type_kind, arc::DataType::INT32);
-
-	auto *func_node = func_builder.exported().driver().body([&](arc::Builder &fb)
-	{
-		auto *sum = fb.add(param1, param2);
-		return fb.ret(sum);
-	});
+	auto *func_node = builder->function<arc::DataType::INT32>("test_func")
+			.param<arc::DataType::INT32>("x")
+			.param<arc::DataType::INT32>("y")
+			.exported()
+			.driver()
+			.body([](arc::Builder &fb, arc::Node *x, arc::Node *y)
+			{
+				auto *sum = fb.add(x, y);
+				return fb.ret(sum);
+			});
 
 	EXPECT_EQ(func_node->ir_type, arc::NodeType::FUNCTION);
 	EXPECT_TRUE((func_node->traits & arc::NodeTraits::EXPORT) != arc::NodeTraits::NONE);
@@ -182,18 +178,18 @@ TEST_F(BuilderFixture, FunctionBuilder)
 
 TEST_F(BuilderFixture, FunctionPointerParameter)
 {
-	auto func_builder = builder->function<arc::DataType::VOID>("ptr_func");
-	auto *ptr_param = func_builder.param_ptr<arc::DataType::INT32>("ptr");
+	auto *pointee = builder->alloc<arc::DataType::INT32>(builder->lit(1));
 
-	EXPECT_EQ(ptr_param->ir_type, arc::NodeType::PARAM);
-	EXPECT_EQ(ptr_param->type_kind, arc::DataType::POINTER);
+	auto *func_node = builder->function<arc::DataType::VOID>("ptr_func")
+			.param_ptr<arc::DataType::INT32>("ptr", pointee)
+			.body([](arc::Builder &fb, arc::Node *ptr)
+			{
+				auto *value = fb.lit(42);
+				fb.ptr_store(value, ptr);
+				return fb.ret();
+			});
 
-	func_builder.body([&](arc::Builder &fb)
-	{
-		auto *value = fb.lit(42);
-		fb.ptr_store(value, ptr_param);
-		return fb.ret();
-	});
+	EXPECT_EQ(func_node->ir_type, arc::NodeType::FUNCTION);
 }
 
 TEST_F(BuilderFixture, BlockBuilder)
@@ -255,33 +251,34 @@ TEST_F(BuilderFixture, ErrorHandling)
 
 TEST_F(BuilderFixture, AtomicOperations)
 {
-	auto* count = builder->lit(1);
-	auto* alloc_node = builder->alloc<arc::DataType::INT32>(count);
-	auto* addr = builder->addr_of(alloc_node);
-	auto* value = builder->lit(42);
+	auto *count = builder->lit(1);
+	auto *alloc_node = builder->alloc<arc::DataType::INT32>(count);
+	auto *addr = builder->addr_of(alloc_node);
+	auto *value = builder->lit(42);
 
-	auto* atomic_store1 = builder->store(value).to_atomic(alloc_node);
+	auto *atomic_store1 = builder->store(value).to_atomic(alloc_node);
 	EXPECT_EQ(atomic_store1->ir_type, arc::NodeType::ATOMIC_STORE);
 
-	auto* atomic_store2 = builder->store(value).through_atomic(addr);
+	auto *atomic_store2 = builder->store(value).through_atomic(addr);
 	EXPECT_EQ(atomic_store2->ir_type, arc::NodeType::ATOMIC_STORE);
 }
 
 TEST_F(BuilderFixture, InvokeOperation)
 {
 	auto func_builder = builder->function<arc::DataType::INT32>("risky_func");
-	auto* func_node = func_builder.body([&](arc::Builder& fb) {
+	auto *func_node = func_builder.body([&](arc::Builder &fb)
+	{
 		return fb.ret(fb.lit(42));
 	});
 
 	auto normal_block = builder->block<arc::DataType::VOID>("normal");
 	auto except_block = builder->block<arc::DataType::VOID>("except");
 
-	auto* arg1 = builder->lit(10);
-	auto* arg2 = builder->lit(20);
-	auto* invoke_node = builder->invoke(func_node, { arg1, arg2 },
-									   normal_block.entry(),
-									   except_block.entry());
+	auto *arg1 = builder->lit(10);
+	auto *arg2 = builder->lit(20);
+	auto *invoke_node = builder->invoke(func_node, { arg1, arg2 },
+	                                    normal_block.entry(),
+	                                    except_block.entry());
 
 	EXPECT_EQ(invoke_node->ir_type, arc::NodeType::INVOKE);
 	EXPECT_EQ(invoke_node->inputs[0], func_node);
@@ -293,8 +290,8 @@ TEST_F(BuilderFixture, InvokeOperation)
 
 TEST_F(BuilderFixture, TypeCasts)
 {
-	auto* int_val = builder->lit(42);
-	auto* float_cast = builder->cast<arc::DataType::FLOAT32>(int_val);
+	auto *int_val = builder->lit(42);
+	auto *float_cast = builder->cast<arc::DataType::FLOAT32>(int_val);
 
 	EXPECT_EQ(float_cast->ir_type, arc::NodeType::CAST);
 	EXPECT_EQ(float_cast->type_kind, arc::DataType::FLOAT32);
