@@ -43,7 +43,7 @@ namespace arc
 
 	StoreHelper Builder::store(Node *location)
 	{
-		return StoreHelper(*this, location);
+		return { *this, location };
 	}
 
 	Node *Builder::ptr_load(Node *pointer)
@@ -162,6 +162,76 @@ namespace arc
 		return binary_op(NodeType::DIV, lhs, rhs);
 	}
 
+	Node *Builder::mod(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::MOD, lhs, rhs);
+	}
+
+	Node *Builder::band(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::BAND, lhs, rhs);
+	}
+
+	Node *Builder::bor(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::BOR, lhs, rhs);
+	}
+
+	Node *Builder::bxor(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::BXOR, lhs, rhs);
+	}
+
+	Node *Builder::bnot(Node *value)
+	{
+		if (!value)
+			throw std::invalid_argument("bnot operand cannot be null");
+
+		Node *node = create_node(NodeType::BNOT, value->type_kind);
+		connect_inputs(node, { value });
+		return node;
+	}
+
+	Node *Builder::bshl(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::BSHL, lhs, rhs);
+	}
+
+	Node *Builder::bshr(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::BSHR, lhs, rhs);
+	}
+
+	Node *Builder::eq(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::EQ, lhs, rhs);
+	}
+
+	Node *Builder::neq(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::NEQ, lhs, rhs);
+	}
+
+	Node *Builder::lt(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::LT, lhs, rhs);
+	}
+
+	Node *Builder::lte(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::LTE, lhs, rhs);
+	}
+
+	Node *Builder::gt(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::GT, lhs, rhs);
+	}
+
+	Node *Builder::gte(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::GTE, lhs, rhs);
+	}
+
 	Node *Builder::call(Node *function, const std::vector<Node *> &args)
 	{
 		if (!function)
@@ -170,15 +240,15 @@ namespace arc
 		if (function->type_kind != DataType::FUNCTION)
 			throw std::invalid_argument("call requires function type");
 
-		/* determine return type from function */
-		auto return_type = DataType::VOID; /* will be resolved from function signature */
-
+		auto& fn_data = function->value.get<DataType::FUNCTION>();
+		DataType return_type = fn_data.return_type ? fn_data.return_type->type() : DataType::VOID;
 		Node *node = create_node(NodeType::CALL, return_type);
+		if (return_type != DataType::VOID && fn_data.return_type)
+			node->value = *fn_data.return_type;
 
 		std::vector<Node *> inputs = { function };
 		inputs.insert(inputs.end(), args.begin(), args.end());
 		connect_inputs(node, inputs);
-
 		return node;
 	}
 
@@ -230,9 +300,13 @@ namespace arc
 		if (normal_target->ir_type != NodeType::ENTRY || except_target->ir_type != NodeType::ENTRY)
 			throw std::invalid_argument("invoke targets must be ENTRY nodes");
 
-		/* return type will be resolved from function signature */
-		/* operand order: [ function, normal_target, except_target, args... ] */
-		Node *node = create_node(NodeType::INVOKE, DataType::VOID);
+		auto& fn_data = function->value.get<DataType::FUNCTION>();
+		DataType return_type = fn_data.return_type ? fn_data.return_type->type() : DataType::VOID;
+
+		Node *node = create_node(NodeType::INVOKE, return_type);
+		if (return_type != DataType::VOID && fn_data.return_type)
+			node->value = *fn_data.return_type;
+
 		std::vector inputs = { function, normal_target, except_target };
 		inputs.insert(inputs.end(), args.begin(), args.end());
 		connect_inputs(node, inputs);
@@ -299,6 +373,29 @@ namespace arc
 	    return node;
 	}
 
+	StructBuilder Builder::struct_type(std::string_view name)
+	{
+		return { *this, name };
+	}
+
+	Node *Builder::array_index(Node *array, Node *index)
+	{
+		if (!array || !index)
+			throw std::invalid_argument("array_index operands cannot be null");
+
+		if (array->type_kind != DataType::ARRAY)
+			throw std::invalid_argument("array_index accepts only array type");
+		auto& arr_data = array->value.get<DataType::ARRAY>();
+		DataType elem_type = arr_data.elem_type;
+
+		/* base + (index * sizeof(T)); */
+		Node* elem_size = lit(elem_sz(elem_type));
+		Node* byte_offset = mul(index, elem_size);
+		Node* array_addr = addr_of(array);
+		Node* element_addr = ptr_add(array_addr, byte_offset);
+		return ptr_load(element_addr);
+	}
+
 	Node *Builder::create_node(NodeType type, DataType result_type)
 	{
 		if (!current_region)
@@ -310,7 +407,6 @@ namespace arc
 		node->ir_type = type;
 		node->type_kind = result_type;
 		node->parent = current_region;
-
 		current_region->append(node);
 		return node;
 	}
@@ -328,6 +424,41 @@ namespace arc
 				input->users.push_back(node);
 			}
 		}
+	}
+
+	StructBuilder::StructBuilder(Builder& builder, const std::string_view name)
+	: builder(builder), struct_name_id(builder.module.intern_str(name)) {}
+
+	StructBuilder& StructBuilder::field(const std::string_view name, DataType type)
+	{
+		auto field_name_id = builder.module.intern_str(name);
+		TypedData field_type_data = {}; /* this defaults to VOID, but it should be fine for type descriptors */
+		fields.emplace_back(field_name_id, type, std::move(field_type_data));
+		return *this;
+	}
+
+	StructBuilder& StructBuilder::field(const std::string_view name, Node* type_node)
+	{
+		if (!type_node)
+			throw std::invalid_argument("type_node cannot be null");
+
+		auto field_name_id = builder.module.intern_str(name);
+		TypedData field_type_data = type_node->value;
+		fields.emplace_back(field_name_id, type_node->type_kind, std::move(field_type_data));
+		return *this;
+	}
+
+	Node* StructBuilder::build(const std::uint32_t alignment)
+	{
+		Node* struct_node = builder.create_node(NodeType::LIT, DataType::STRUCT);
+
+		DataTraits<DataType::STRUCT>::value struct_data;
+		struct_data.fields = std::move(fields);
+		struct_data.alignment = alignment;
+		struct_data.name = struct_name_id;
+
+		struct_node->value.set<decltype(struct_data), DataType::STRUCT>(std::move(struct_data));
+		return struct_node;
 	}
 
 	StoreHelper::StoreHelper(Builder &builder, Node *value) : builder(builder), value(value) {}
@@ -374,9 +505,9 @@ namespace arc
 		if (!location)
 			throw std::invalid_argument("atomic store location cannot be null");
 
+		Node *ordering_node = builder.lit(static_cast<std::uint8_t>(ordering));
 		Node *address = builder.addr_of(location);
 		Node *node = builder.create_node(NodeType::ATOMIC_STORE);
-		Node *ordering_node = builder.lit(static_cast<std::uint8_t>(ordering));
 		Builder::connect_inputs(node, { value, address, ordering_node });
 		return node;
 	}
@@ -389,8 +520,8 @@ namespace arc
 		if (pointer->type_kind != DataType::POINTER)
 			throw std::invalid_argument("through_atomic requires pointer type");
 
-		Node *node = builder.create_node(NodeType::ATOMIC_STORE);
 		Node *ordering_node = builder.lit(static_cast<std::uint8_t>(ordering));
+		Node *node = builder.create_node(NodeType::ATOMIC_STORE);
 		Builder::connect_inputs(node, { value, pointer, ordering_node });
 		return node;
 	}

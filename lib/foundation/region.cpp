@@ -14,6 +14,7 @@ namespace arc
 		Node* n = a.allocate(1);
 		std::construct_at(n);
 		n->ir_type = NodeType::ENTRY;
+		n->parent = this;
 		ns.push_back(n);
 	}
 
