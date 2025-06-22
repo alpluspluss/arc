@@ -9,11 +9,13 @@
 #include <arc/foundation/node.hpp>
 #include <arc/foundation/region.hpp>
 #include <arc/foundation/typed-data.hpp>
+#include <arc/support/inference.hpp>
 
 namespace arc
 {
 	class StoreHelper;
 	class Region;
+	class StructBuilder;
 	template<DataType T>
 	class FunctionBuilder;
 	template<DataType T>
@@ -377,6 +379,34 @@ namespace arc
 		template<DataType TargetType>
 		Node *cast(Node *value);
 
+		/**
+		 * @brief Create a struct type builder
+		 * @param name Struct name
+		 * @return Struct builder for fluent API
+		 */
+		StructBuilder struct_type(std::string_view name);
+
+		template<DataType ElementType, std::uint32_t Count>
+		Node* array_alloc()
+		{
+			Node* alloc_node = create_node(NodeType::ALLOC, DataType::ARRAY);
+
+			DataTraits<DataType::ARRAY>::value arr_data;
+			arr_data.elem_type = ElementType;
+			arr_data.count = Count;
+			arr_data.elements = {};
+			alloc_node->value.set<decltype(arr_data), DataType::ARRAY>(arr_data);
+			return alloc_node;
+		}
+
+		/**
+		 * @brief Index into an array
+		 * @param array Array to index
+		 * @param index Index value
+		 * @return Node representing the indexed element
+		 */
+		Node* array_index(Node* array, Node* index);
+
 	private:
 		Module &module;
 		Region *current_region;
@@ -401,6 +431,46 @@ namespace arc
 		template<DataType T>
 		friend class BlockBuilder;
 		friend class StoreHelper;
+		friend class StructBuilder;
+	};
+
+	class StructBuilder
+	{
+	public:
+		/**
+		 * @brief Construct struct builder
+		 * @param builder Parent builder reference
+		 * @param name Struct name
+		 */
+		StructBuilder(Builder& builder, std::string_view name);
+
+		/**
+		 * @brief Add a field with primitive type
+		 * @param name Field name
+		 * @param type Field type
+		 * @return Reference to this builder for chaining
+		 */
+		StructBuilder& field(std::string_view name, DataType type);
+
+		/**
+		 * @brief Add a field with complex type (pointer, array, etc.)
+		 * @param name Field name
+		 * @param type_node Node representing the field type
+		 * @return Reference to this builder for chaining
+		 */
+		StructBuilder& field(std::string_view name, Node* type_node);
+
+		/**
+		 * @brief Build the struct type
+		 * @param alignment Struct alignment in bytes (optional)
+		 * @return Node representing the struct type
+		 */
+		Node* build(std::uint32_t alignment = 8);
+
+	private:
+		Builder& builder;
+		StringTable::StringId struct_name_id;
+		u8slice<std::tuple<StringTable::StringId, DataType, TypedData>> fields;
 	};
 
 	/**
@@ -574,8 +644,6 @@ namespace arc
 		Node *value;
 	};
 
-	/* template implementations */
-
 	template<DataType ReturnType>
 	FunctionBuilder<
 		ReturnType>::FunctionBuilder(Builder &builder, Node *function_node, Region *function_region) : builder(builder),
@@ -615,6 +683,9 @@ namespace arc
 	{
 		Node *param_node = builder.create_node(NodeType::PARAM, ParamType);
 		param_node->str_id = builder.module.intern_str(name);
+		function->inputs.push_back(param_node);
+		param_node->users.push_back(function);
+		region->append(param_node);
 		parameters.push_back(param_node);
 		return *this;
 	}
@@ -632,6 +703,10 @@ namespace arc
 		Node *param_node = builder.create_node(NodeType::PARAM, DataType::POINTER);
 		param_node->str_id = builder.module.intern_str(name);
 
+		function->inputs.push_back(param_node);
+		param_node->users.push_back(function);
+		region->append(param_node);
+
 		DataTraits<DataType::POINTER>::value ptr_data = {};
 		ptr_data.pointee = pointee_node;
 		ptr_data.addr_space = 0;
@@ -645,16 +720,24 @@ namespace arc
 	template<typename F>
 	Node *FunctionBuilder<ReturnType>::body(F &&body_func)
 	{
-		using traits = FunctionTraits<std::decay_t<F> >;
+		using traits = FunctionTraits<std::decay_t<F>>;
 		constexpr std::size_t expected_params = traits::arity - 1;
 
 		if (parameters.size() != expected_params)
 			throw std::invalid_argument("lambda parameter count doesn't match declared parameters");
 
+		DataTraits<DataType::FUNCTION>::value fn_data = {};
+		ach::allocator<TypedData> alloc;
+		TypedData* ret_type = alloc.allocate(1);
+		std::construct_at(ret_type);
+		arc::set_t<ReturnType>(*ret_type);
+		fn_data.return_type = ret_type;
+		function->value.set<decltype(fn_data), DataType::FUNCTION>(fn_data);
+
 		Region *old_region = builder.get_insertion_point();
 		builder.set_insertion_point(region);
 		call_with_params(std::forward<F>(body_func),
-		                 std::make_index_sequence<expected_params> {});
+						 std::make_index_sequence<expected_params>{});
 
 		builder.set_insertion_point(old_region);
 		return function;
@@ -669,7 +752,7 @@ namespace arc
 	{
 		Node *func_node = create_node(NodeType::FUNCTION, DataType::FUNCTION);
 		func_node->str_id = module.intern_str(name);
-
+		module.add_fn(func_node);
 		Region *func_region = module.create_region(name, current_region);
 		return FunctionBuilder<ReturnType>(*this, func_node, func_region);
 	}
@@ -685,7 +768,6 @@ namespace arc
 	Node *Builder::lit(T value)
 	{
 		Node *node = nullptr;
-
 		if constexpr (std::is_same_v<T, bool>)
 		{
 			node = create_node(NodeType::LIT, DataType::BOOL);

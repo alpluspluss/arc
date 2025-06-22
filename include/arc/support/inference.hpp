@@ -22,7 +22,7 @@ namespace arc
 	 * @param rhs Right operand node (modified in-place)
 	 * @return true if promotion succeeded, false for incompatible types
 	 */
-	bool infer_binary_t(Node* lhs, Node* rhs);
+	bool infer_binary_t(Node *lhs, Node *rhs);
 
 	/**
 	 * @brief Internal helper for primitive type inference
@@ -126,6 +126,147 @@ namespace arc
 				return 3;
 			default:
 				return -1;
+		}
+	}
+
+	/**
+	* @brief Create a default/empty value for a given DataType
+	* @tparam T The DataType to create a value for
+	* @return Default-constructed value of the corresponding type
+	*/
+	template<DataType T>
+	auto make_t()
+	{
+		if constexpr (T == DataType::VOID)
+		{
+			return DataTraits<DataType::VOID>::value {};
+		}
+		else if constexpr (T == DataType::BOOL)
+		{
+			return false;
+		}
+		else if constexpr (T == DataType::INT8)
+		{
+			return std::int8_t { 0 };
+		}
+		else if constexpr (T == DataType::INT16)
+		{
+			return std::int16_t { 0 };
+		}
+		else if constexpr (T == DataType::INT32)
+		{
+			return std::int32_t { 0 };
+		}
+		else if constexpr (T == DataType::INT64)
+		{
+			return std::int64_t { 0 };
+		}
+		else if constexpr (T == DataType::UINT8)
+		{
+			return std::uint8_t { 0 };
+		}
+		else if constexpr (T == DataType::UINT16)
+		{
+			return std::uint16_t { 0 };
+		}
+		else if constexpr (T == DataType::UINT32)
+		{
+			return std::uint32_t { 0 };
+		}
+		else if constexpr (T == DataType::UINT64)
+		{
+			return std::uint64_t { 0 };
+		}
+		else if constexpr (T == DataType::FLOAT32)
+		{
+			return 0.0f;
+		}
+		else if constexpr (T == DataType::FLOAT64)
+		{
+			return 0.0;
+		}
+		else if constexpr (T == DataType::POINTER)
+		{
+			return DataTraits<DataType::POINTER>::value { nullptr, 0 };
+		}
+		else if constexpr (T == DataType::ARRAY)
+		{
+			DataTraits<DataType::ARRAY>::value arr = {};
+			arr.elements = {};
+			arr.elem_type = DataType::VOID;
+			return arr;
+		}
+		else if constexpr (T == DataType::STRUCT)
+		{
+			DataTraits<DataType::STRUCT>::value s;
+			s.fields = {};
+			s.alignment = 1;
+			s.name = StringTable::StringId {};
+			return s;
+		}
+		else if constexpr (T == DataType::FUNCTION)
+		{
+			DataTraits<DataType::FUNCTION>::value fn;
+			ach::allocator<TypedData> a;
+			auto* s = a.allocate(1);
+			std::construct_at(s);
+			fn.return_type = s;
+			return fn;
+		}
+		else if constexpr (T == DataType::VECTOR)
+		{
+			DataTraits<DataType::VECTOR>::value vec;
+			vec.elem_type = DataType::VOID;
+			vec.lane_count = 0;
+			return vec;
+		}
+		else
+		{
+			static_assert(sizeof(T) == 0, "unsupported DataType in make_t");
+		}
+	}
+
+	/**
+	* @brief Convenience function to set a TypedData with a type value
+	* @tparam T The DataType to set
+	* @param data The TypedData to modify
+	*/
+	template<DataType T>
+	void set_t(TypedData &data)
+	{
+		auto value = make_t<T>();
+		data.set<decltype(value), T>(value);
+	}
+
+	/**
+	 * @brief Get the size in bytes of a data type
+	 * @param type The data type to get size for
+	 * @return Size in bytes
+	 */
+	constexpr std::uint32_t elem_sz(DataType type) noexcept
+	{
+		switch (type)
+		{
+			case DataType::BOOL:
+			case DataType::INT8:
+			case DataType::UINT8:
+				return 1;
+			case DataType::INT16:
+			case DataType::UINT16:
+				return 2;
+			case DataType::INT32:
+			case DataType::UINT32:
+			case DataType::FLOAT32:
+				return 4;
+			case DataType::INT64:
+			case DataType::UINT64:
+			case DataType::FLOAT64:
+			case DataType::POINTER:
+				return 8;
+			case DataType::VOID:
+				return 0;
+			default:
+				return 0;
 		}
 	}
 }

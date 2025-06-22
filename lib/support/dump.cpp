@@ -3,21 +3,19 @@
 #include <iostream>
 #include <string>
 #include <unordered_map>
-#include <arc/support/dump.hpp>
 #include <arc/foundation/module.hpp>
-#include <arc/foundation/region.hpp>
 #include <arc/foundation/node.hpp>
+#include <arc/foundation/region.hpp>
 #include <arc/foundation/typed-data.hpp>
+#include <arc/support/dump.hpp>
 
 namespace arc
 {
 	namespace
 	{
-		/* static state for node numbering */
 		thread_local std::unordered_map<Node *, std::uint32_t> node_numbers;
 		thread_local std::uint32_t next_node_number = 1;
 
-		/* get or assign a number to a node */
 		std::uint32_t get_node_number(Node *node)
 		{
 			if (auto it = node_numbers.find(node);
@@ -93,7 +91,7 @@ namespace arc
 				{
 					auto &arr_data = node.value.get<DataType::ARRAY>();
 					return "arr<" + dttstr(arr_data.elem_type) + " x " +
-					       std::to_string(arr_data.elements.size()) + ">";
+					       std::to_string(arr_data.count) + ">";
 				}
 				case DataType::VECTOR:
 				{
@@ -122,28 +120,17 @@ namespace arc
 				case DataType::FUNCTION:
 				{
 					std::string result = "fn(";
-					std::string_view func_name = module.strtable().get(node.str_id);
-					for (Region* region : module.root()->children())
+					for (std::size_t i = 0; i < node.inputs.size(); ++i)
 					{
-						if (region->name() == func_name)
-						{
-							std::vector<Node*> params;
-							for (Node* n : region->nodes())
-							{
-								if (n->ir_type == NodeType::PARAM)
-									params.push_back(n);
-							}
-
-							for (std::size_t i = 0; i < params.size(); ++i)
-							{
-								if (i > 0) result += ", ";
-								result += dttstr(params[i]->type_kind);
-							}
-							break;
-						}
+						if (i > 0)
+							result += ", ";
+						result += dttstr(node.inputs[i]->type_kind);
 					}
 
-					result += ") -> " + dttstr(node.type_kind);
+					auto& fn_data = node.value.get<DataType::FUNCTION>();
+					DataType return_type = fn_data.return_type ? fn_data.return_type->type() : DataType::VOID;
+
+					result += ") -> " + dttstr(return_type);
 					return result;
 				}
 				default:
@@ -162,7 +149,7 @@ namespace arc
 				case NodeType::PARAM:
 					return "param";
 				case NodeType::LIT:
-					return "lit";
+					return ""; /* type already tells what is it */
 				case NodeType::ADD:
 					return "add";
 				case NodeType::SUB:
@@ -317,6 +304,8 @@ namespace arc
 			{
 				if (node->ir_type == NodeType::ENTRY)
 					os << "        entry\n";
+				else if (node->ir_type == NodeType::PARAM)
+					continue;
 				else
 				{
 					os << "        ";
@@ -355,8 +344,23 @@ namespace arc
 			if (func->ir_type == NodeType::FUNCTION)
 			{
 				print_node_traits(*func, os);
-				os << "fn @" << module.strtable().get(func->str_id) << "() -> ";
-				os << cdttstr(*func, module) << "\n{\n";
+				auto& fn_data = func->value.get<DataType::FUNCTION>();
+				DataType return_type = fn_data.return_type ? fn_data.return_type->type() : DataType::VOID;
+
+				std::vector<Node*> params;
+				for (Node* param : func->inputs)
+				{
+					if (param->ir_type == NodeType::PARAM)
+						params.push_back(param);
+				}
+
+				os << "fn @" << module.strtable().get(func->str_id) << "(";
+				for (std::size_t i = 0; i < params.size(); ++i)
+				{
+					if (i > 0) os << ", ";
+					os << cdttstr(*params[i], module) << " %" << get_node_number(params[i]);
+				}
+				os << ") -> " << dttstr(return_type) << "\n{\n";
 				for (Region *region: module.root()->children())
 				{
 					if (region->name() == module.strtable().get(func->str_id))
@@ -393,7 +397,7 @@ namespace arc
 		/* special cases that don't use standard format */
 		if (node.ir_type == NodeType::ENTRY)
 		{
-			os << "entry  # memory state placeholder";
+			os << "entry";
 			return;
 		}
 
@@ -408,6 +412,51 @@ namespace arc
 			return;
 		}
 
+		if (node.ir_type == NodeType::BRANCH)
+		{
+			const std::uint32_t num = get_node_number(&node);
+			os << "%" << num << " = branch ";
+			os << "%" << get_node_number(node.inputs[0]) << " ? ";
+			os << "$" << node.inputs[1]->parent->name() << " : ";
+			os << "$" << node.inputs[2]->parent->name();
+			return;
+		}
+
+		if (node.ir_type == NodeType::JUMP)
+		{
+			const std::uint32_t num = get_node_number(&node);
+			os << "%" << num << " = jump $" << node.inputs[0]->parent->name();
+			return;
+		}
+
+		if (node.ir_type == NodeType::CALL)
+		{
+			const std::uint32_t num = get_node_number(&node);
+			os << "%" << num << " = ";
+			if (node.type_kind != DataType::VOID)
+				os << cdttstr(node, module) << " ";
+			os << "call @" << module.strtable().get(node.inputs[0]->str_id);
+			for (size_t i = 1; i < node.inputs.size(); ++i)
+				os << ", %" << get_node_number(node.inputs[i]);
+
+			return;
+		}
+
+		if (node.ir_type == NodeType::INVOKE)
+		{
+			const std::uint32_t num = get_node_number(&node);
+			os << "%" << num << " = ";
+			if (node.type_kind != DataType::VOID)
+				os << cdttstr(node, module) << " ";
+
+			os << "invoke @" << module.strtable().get(node.inputs[0]->str_id);
+			os << ", $" << node.inputs[1]->parent->name();
+			os << ", $" << node.inputs[2]->parent->name();
+			for (std::size_t i = 3; i < node.inputs.size(); ++i)
+				os << ", %" << get_node_number(node.inputs[i]);
+			return;
+		}
+
 		const std::uint32_t num = get_node_number(&node);
 		os << "%" << num << " = ";
 
@@ -418,7 +467,6 @@ namespace arc
 		os << ntttstr(node.ir_type); /* print operation */
 		if (node.ir_type == NodeType::LIT)
 		{
-			os << " ";
 			print_lit_v(node, os);
 		}
 		else if (node.ir_type == NodeType::ALLOC || node.ir_type == NodeType::CAST)

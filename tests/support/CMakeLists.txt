@@ -5,6 +5,11 @@ arc_test(allocator-test
         LIBS Arc::Support
 )
 
+arc_test(dump-test
+        SOURCES dump.cpp
+        LIBS Arc::Arc
+)
+
 arc_test(inference-test
         SOURCES inference.cpp
         LIBS Arc::Arc

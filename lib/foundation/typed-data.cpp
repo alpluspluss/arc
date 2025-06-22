@@ -54,6 +54,20 @@ namespace arc
 		if (current_type == DataType::VOID)
 			return;
 
+		if (current_type == DataType::FUNCTION)
+		{
+			auto& fn_data = *std::launder(reinterpret_cast<DataTraits<DataType::FUNCTION>::value*>(storage));
+			if (fn_data.return_type)
+			{
+				ach::allocator<TypedData> alloc;
+				std::destroy_at(fn_data.return_type);
+				alloc.deallocate(fn_data.return_type, 1);
+			}
+			std::destroy_at(&fn_data);
+			current_type = DataType::VOID;
+			return;
+		}
+
 		/* dispatch destruction based on type */
 		switch (current_type)
 		{
@@ -94,6 +108,26 @@ namespace arc
 		if (current_type == DataType::VOID)
 		{
 			std::memset(storage, 0, MAX_SIZE);
+			return;
+		}
+
+		if (current_type == DataType::FUNCTION)
+		{
+			const auto& other_fn_data = other.get<DataType::FUNCTION>();
+			DataTraits<DataType::FUNCTION>::value fn_data;
+			if (other_fn_data.return_type)
+			{
+				ach::allocator<TypedData> alloc;
+				TypedData* new_return_type = alloc.allocate(1);
+				std::construct_at(new_return_type, *other_fn_data.return_type);
+				fn_data.return_type = new_return_type;
+			}
+			else
+			{
+				fn_data.return_type = nullptr;
+			}
+
+			std::construct_at(reinterpret_cast<DataTraits<DataType::FUNCTION>::value*>(storage), fn_data);
 			return;
 		}
 
@@ -141,6 +175,20 @@ namespace arc
 		if (current_type == DataType::VOID)
 		{
 			std::memset(storage, 0, MAX_SIZE);
+			return;
+		}
+
+		if (current_type == DataType::FUNCTION)
+		{
+			auto& other_fn_data = other.get<DataType::FUNCTION>();
+			DataTraits<DataType::FUNCTION>::value fn_data;
+
+			fn_data.return_type = other_fn_data.return_type;
+			other_fn_data.return_type = nullptr;
+
+			std::construct_at(reinterpret_cast<DataTraits<DataType::FUNCTION>::value*>(storage), fn_data);
+
+			other.current_type = DataType::VOID;
 			return;
 		}
 

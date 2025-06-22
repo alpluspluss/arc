@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <memory>
 #include <tuple>
-#include <typeinfo>
 #include <arc/support/slice.hpp>
 #include <arc/support/string-table.hpp>
 
@@ -197,6 +196,8 @@ namespace arc
 			u16slice<Node *> elements;
 			/** @brief The element type */
 			DataType elem_type;
+			/** @brief Array size */
+			std::uint32_t count;
 		} __attribute__((packed));
 	};
 
@@ -223,15 +224,19 @@ namespace arc
 	template<>
 	struct DataTraits<DataType::FUNCTION>
 	{
-		struct value {};
+		struct value
+		{
+			TypedData* return_type;
+		};
 
-		/* intentionally left empty as it is possible to iterate
-		 * through the use-def chains of the function to determine each parameter
-		 * type by simply checking if any of node in the chains is `NodeType::PARAM`
+		/* parameter types can be determined by iterating through the function's
+		 * use-def chains and checking for nodes with NodeType::PARAM.
 		 *
-		 * trivially, the return type of the function can be determined by checking
-		 * the `::type_kind` field. variadic argument parameter is not supported
-		 * due to complexity at the ABI level */
+		 * return type is stored directly in the return_type field to avoid
+		 * complex inference logic that fails with recursive functions.
+		 *
+		 * variadic argument parameters are not supported due to complexity
+		 * at the ABI level */
 	};
 
 	/**
@@ -314,10 +319,10 @@ case DataType::dt: return std::is_same_v<T, typename DataTraits<DataType::dt>::v
 		template<DataType T>
 		typename DataTraits<T>::value &get()
 		{
-			/* DataType must match Node.type_kind to enforce storage contract.
+			/* DataType must match Node::type_kind to enforce storage contract.
 				* provides compile-time type safety with runtime type checking */
 			if (current_type != T)
-				throw std::bad_cast();
+				throw std::bad_variant_access();
 			return *std::launder(reinterpret_cast<typename DataTraits<T>::value *>(storage));
 		}
 
@@ -332,7 +337,7 @@ case DataType::dt: return std::is_same_v<T, typename DataTraits<DataType::dt>::v
 		const typename DataTraits<T>::value &get() const
 		{
 			if (current_type != T)
-				throw std::bad_cast();
+				throw std::bad_variant_access();
 			return *std::launder(reinterpret_cast<const typename DataTraits<T>::value *>(storage));
 		}
 
@@ -425,7 +430,7 @@ case DataType::dt: return std::is_same_v<T, typename DataTraits<DataType::dt>::v
 	inline const DataTraits<DataType::VOID>::value &TypedData::get<DataType::VOID>() const
 	{
 		if (current_type != DataType::VOID)
-			throw std::bad_cast();
+			throw std::bad_variant_access();
 
 		static constexpr DataTraits<DataType::VOID>::value void_value = {};
 		return void_value;
@@ -435,7 +440,7 @@ case DataType::dt: return std::is_same_v<T, typename DataTraits<DataType::dt>::v
 	inline DataTraits<DataType::VOID>::value &TypedData::get<DataType::VOID>()
 	{
 		if (current_type != DataType::VOID)
-			throw std::bad_cast();
+			throw std::bad_variant_access();
 
 		static DataTraits<DataType::VOID>::value void_value = {};
 		return void_value;
