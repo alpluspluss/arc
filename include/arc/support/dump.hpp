@@ -3,6 +3,7 @@
 #pragma once
 
 #include <iosfwd>
+#include <iostream>
 
 namespace arc
 {

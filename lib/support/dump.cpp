@@ -316,7 +316,7 @@ namespace arc
 			for (Node *node: region.nodes())
 			{
 				if (node->ir_type == NodeType::ENTRY)
-					os << "        entry  # memory state will go here\n";
+					os << "        entry\n";
 				else
 				{
 					os << "        ";

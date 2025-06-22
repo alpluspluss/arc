@@ -162,6 +162,76 @@ namespace arc
 		return binary_op(NodeType::DIV, lhs, rhs);
 	}
 
+	Node *Builder::mod(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::MOD, lhs, rhs);
+	}
+
+	Node *Builder::band(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::BAND, lhs, rhs);
+	}
+
+	Node *Builder::bor(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::BOR, lhs, rhs);
+	}
+
+	Node *Builder::bxor(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::BXOR, lhs, rhs);
+	}
+
+	Node *Builder::bnot(Node *value)
+	{
+		if (!value)
+			throw std::invalid_argument("bnot operand cannot be null");
+
+		Node *node = create_node(NodeType::BNOT, value->type_kind);
+		connect_inputs(node, { value });
+		return node;
+	}
+
+	Node *Builder::bshl(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::BSHL, lhs, rhs);
+	}
+
+	Node *Builder::bshr(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::BSHR, lhs, rhs);
+	}
+
+	Node *Builder::eq(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::EQ, lhs, rhs);
+	}
+
+	Node *Builder::neq(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::NEQ, lhs, rhs);
+	}
+
+	Node *Builder::lt(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::LT, lhs, rhs);
+	}
+
+	Node *Builder::lte(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::LTE, lhs, rhs);
+	}
+
+	Node *Builder::gt(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::GT, lhs, rhs);
+	}
+
+	Node *Builder::gte(Node *lhs, Node *rhs)
+	{
+		return binary_op(NodeType::GTE, lhs, rhs);
+	}
+
 	Node *Builder::call(Node *function, const std::vector<Node *> &args)
 	{
 		if (!function)

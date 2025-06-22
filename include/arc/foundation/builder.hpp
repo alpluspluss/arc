@@ -32,7 +32,7 @@ namespace arc
 		using return_type = R;
 
 		template<std::size_t N>
-		using arg = std::tuple_element_t<N, std::tuple<Args...>>;
+		using arg = std::tuple_element_t<N, std::tuple<Args...> >;
 	};
 
 	template<typename R, typename C, typename... Args>
@@ -42,11 +42,12 @@ namespace arc
 		using return_type = R;
 
 		template<std::size_t N>
-		using arg = std::tuple_element_t<N, std::tuple<Args...>>;
+		using arg = std::tuple_element_t<N, std::tuple<Args...> >;
 	};
 
 	template<typename F>
 	struct FunctionTraits : FunctionTraits<decltype(&F::operator())> {};
+
 	/**
 	 * @brief Main IR builder class for constructing Arc IR nodes and regions
 	 */
@@ -120,7 +121,7 @@ namespace arc
 		 * @param location Memory location to store to
 		 * @return Node representing the store operation
 		 */
-		Node* store(Node* value, Node* location);
+		Node *store(Node *value, Node *location);
 
 		/**
 		 * @brief Create a load node from named memory location
@@ -142,7 +143,7 @@ namespace arc
 		 * @param pointer Pointer to store through
 		 * @return Node representing the store operation
 		 */
-		Node* ptr_store(Node* value, Node* pointer);
+		Node *ptr_store(Node *value, Node *pointer);
 
 		/**
 		 * @brief Create an address-of node
@@ -201,6 +202,109 @@ namespace arc
 		Node *div(Node *lhs, Node *rhs);
 
 		/**
+		 * @brief Create modulus node
+		 * @param lhs Left operand
+		 * @param rhs Right operand
+		 * @return Node representing lhs % rhs
+		 */
+		Node *mod(Node *lhs, Node *rhs);
+
+		/**
+		 * @brief Create bitwise AND node
+		 * @param lhs Left operand
+		 * @param rhs Right operand
+		 * @return Node representing lhs & rhs
+		 */
+		Node *band(Node *lhs, Node *rhs);
+
+		/**
+		 * @brief Create bitwise OR node
+		 * @param lhs Left operand
+		 * @param rhs Right operand
+		 * @return Node representing lhs | rhs
+		 */
+		Node *bor(Node *lhs, Node *rhs);
+
+		/**
+		 * @brief Create bitwise XOR node
+		 * @param lhs Left operand
+		 * @param rhs Right operand
+		 * @return Node representing lhs ^ rhs
+		 */
+		Node *bxor(Node *lhs, Node *rhs);
+
+		/**
+		 * @brief Create bitwise NOT node
+		 * @param value Operand to invert
+		 * @return Node representing ~value
+		 */
+		Node *bnot(Node *value);
+
+		/**
+		 * @brief Create bitwise shift left node
+		 * @param lhs Left operand
+		 * @param rhs Right operand (shift amount)
+		 * @return Node representing lhs << rhs
+		 */
+		Node *bshl(Node *lhs, Node *rhs);
+
+		/**
+		 * @brief Create bitwise shift right node
+		 * @param lhs Left operand
+		 * @param rhs Right operand (shift amount)
+		 * @return Node representing lhs >> rhs
+		 */
+		Node *bshr(Node *lhs, Node *rhs);
+
+		/**
+		 * @brief Create equality comparison node
+		 * @param lhs Left operand
+		 * @param rhs Right operand
+		 * @return Node representing lhs == rhs
+		 */
+		Node *eq(Node *lhs, Node *rhs);
+
+		/**
+		 * @brief Create inequality comparison node
+		 * @param lhs Left operand
+		 * @param rhs Right operand
+		 * @return Node representing lhs != rhs
+		 */
+		Node *neq(Node *lhs, Node *rhs);
+
+		/**
+		 * @brief Create less than comparison node
+		 * @param lhs Left operand
+		 * @param rhs Right operand
+		 * @return Node representing lhs < rhs
+		 */
+		Node *lt(Node *lhs, Node *rhs);
+
+		/**
+		 * @brief Create less than or equal comparison node
+		 * @param lhs Left operand
+		 * @param rhs Right operand
+		 * @return Node representing lhs <= rhs
+		 */
+		Node *lte(Node *lhs, Node *rhs);
+
+		/**
+		 * @brief Create greater than comparison node
+		 * @param lhs Left operand
+		 * @param rhs Right operand
+		 * @return Node representing lhs > rhs
+		 */
+		Node *gt(Node *lhs, Node *rhs);
+
+		/**
+		 * @brief Create greater than or equal comparison node
+		 * @param lhs Left operand
+		 * @param rhs Right operand
+		 * @return Node representing lhs >= rhs
+		 */
+		Node *gte(Node *lhs, Node *rhs);
+
+		/**
 		 * @brief Create function call node
 		 * @param function Function to call
 		 * @param args Function arguments
@@ -246,7 +350,7 @@ namespace arc
 		 * @param elements Scalar elements to combine into vector
 		 * @return Node representing the vector
 		 */
-		Node* vector_build(const std::vector<Node*>& elements);
+		Node *vector_build(const std::vector<Node *> &elements);
 
 		/**
 		 * @brief Create a vector splat node from a scalar
@@ -254,7 +358,7 @@ namespace arc
 		 * @param lane_count Number of lanes in the vector
 		 * @return Node representing the vector
 		 */
-		Node* vector_splat(Node* scalar, std::uint32_t lane_count);
+		Node *vector_splat(Node *scalar, std::uint32_t lane_count);
 
 		/**
 		 * @brief Extract scalar from vector
@@ -262,7 +366,7 @@ namespace arc
 		 * @param index Index of element to extract
 		 * @return Node representing the extracted scalar
 		 */
-		Node* vector_extract(Node* vector, std::uint32_t index);
+		Node *vector_extract(Node *vector, std::uint32_t index);
 
 		/**
 		 * @brief Create type cast node
@@ -271,7 +375,7 @@ namespace arc
 		 * @return Node representing the cast operation
 		 */
 		template<DataType TargetType>
-		Node* cast(Node* value);
+		Node *cast(Node *value);
 
 	private:
 		Module &module;
@@ -345,7 +449,7 @@ namespace arc
 		 * @return Node representing the parameter
 		 */
 		template<DataType ParamType>
-		FunctionBuilder& param(std::string_view name);
+		FunctionBuilder &param(std::string_view name);
 
 		/**
 		 * @brief Add a pointer parameter to the function
@@ -355,7 +459,7 @@ namespace arc
 		 * @return Node representing the pointer parameter
 		 */
 		template<DataType PointeeType>
-		FunctionBuilder& param_ptr(std::string_view name, Node* pointee_node);
+		FunctionBuilder &param_ptr(std::string_view name, Node *pointee_node);
 
 		/**
 		 * @brief Define the function body
@@ -363,7 +467,7 @@ namespace arc
 		 * @return The function node
 		 */
 		template<typename F>
-		Node *body(F&& body_func);
+		Node *body(F &&body_func);
 
 	private:
 		Builder &builder;
@@ -372,7 +476,7 @@ namespace arc
 		std::vector<Node *> parameters;
 
 		template<typename F, std::size_t... Is>
-		auto call_with_params(F&& func, std::index_sequence<Is...>)
+		auto call_with_params(F &&func, std::index_sequence<Is...>)
 		{
 			return func(builder, parameters[Is]...);
 		}
@@ -404,7 +508,7 @@ namespace arc
 		 * @brief Get the entry node for this block
 		 * @return Entry node for control flow targeting
 		 */
-		Node* entry() const
+		Node *entry() const
 		{
 			return region->entry();
 		}
@@ -412,7 +516,6 @@ namespace arc
 	private:
 		Builder &builder;
 		Region *region;
-
 	};
 
 	/**
@@ -508,7 +611,7 @@ namespace arc
 
 	template<DataType ReturnType>
 	template<DataType ParamType>
-	FunctionBuilder<ReturnType>& FunctionBuilder<ReturnType>::param(std::string_view name)
+	FunctionBuilder<ReturnType> &FunctionBuilder<ReturnType>::param(std::string_view name)
 	{
 		Node *param_node = builder.create_node(NodeType::PARAM, ParamType);
 		param_node->str_id = builder.module.intern_str(name);
@@ -518,7 +621,7 @@ namespace arc
 
 	template<DataType ReturnType>
 	template<DataType PointeeType>
-	FunctionBuilder<ReturnType>& FunctionBuilder<ReturnType>::param_ptr(const std::string_view name, Node* pointee_node)
+	FunctionBuilder<ReturnType> &FunctionBuilder<ReturnType>::param_ptr(const std::string_view name, Node *pointee_node)
 	{
 		if (!pointee_node)
 			throw std::invalid_argument("pointee node cannot be null");
@@ -540,9 +643,9 @@ namespace arc
 
 	template<DataType ReturnType>
 	template<typename F>
-	Node *FunctionBuilder<ReturnType>::body(F&& body_func)
+	Node *FunctionBuilder<ReturnType>::body(F &&body_func)
 	{
-		using traits = FunctionTraits<std::decay_t<F>>;
+		using traits = FunctionTraits<std::decay_t<F> >;
 		constexpr std::size_t expected_params = traits::arity - 1;
 
 		if (parameters.size() != expected_params)
@@ -551,7 +654,7 @@ namespace arc
 		Region *old_region = builder.get_insertion_point();
 		builder.set_insertion_point(region);
 		call_with_params(std::forward<F>(body_func),
-									  std::make_index_sequence<expected_params>{});
+		                 std::make_index_sequence<expected_params> {});
 
 		builder.set_insertion_point(old_region);
 		return function;
@@ -655,13 +758,13 @@ namespace arc
 	}
 
 	template<DataType TargetType>
-	Node* Builder::cast(Node* value)
+	Node *Builder::cast(Node *value)
 	{
 		if (!value)
 			throw std::invalid_argument("cast value cannot be null");
 
-		Node* node = create_node(NodeType::CAST, TargetType);
-		connect_inputs(node, {value});
+		Node *node = create_node(NodeType::CAST, TargetType);
+		connect_inputs(node, { value });
 		return node;
 	}
 
