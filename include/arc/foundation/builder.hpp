@@ -111,6 +111,13 @@ namespace arc
 		Node *alloc(Node *count);
 
 		/**
+		 * @brief Create a struct allocation node
+		 * @param type_def Type definition
+		 * @return Node representing the allocation
+		 */
+		Node* alloc(const TypedData& type_def);
+
+		/**
 		 * @brief Create a load node from named memory location
 		 * @param location Memory location to load from
 		 * @return Node representing the loaded value
@@ -463,9 +470,9 @@ namespace arc
 		/**
 		 * @brief Build the struct type
 		 * @param alignment Struct alignment in bytes (optional)
-		 * @return Node representing the struct type
+		 * @return TypedData representing the struct type
 		 */
-		Node* build(std::uint32_t alignment = 8);
+		TypedData build(std::uint32_t alignment = 8);
 
 	private:
 		Builder& builder;

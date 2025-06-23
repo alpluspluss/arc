@@ -4,6 +4,7 @@
 
 #include <string_view>
 #include <vector>
+#include <unordered_map>
 #include <arc/foundation/node.hpp>
 #include <arc/support/allocator.hpp>
 
@@ -109,7 +110,14 @@ namespace arc
 		 */
 		StringTable& strtable();
 
+		/**
+		 * @brief Register a type
+		 * @return Reference to the TypedData that's registered
+		 */
+		const TypedData& add_t(const std::string& name, TypedData tdef);
+
 	private:
+		std::unordered_map<std::string, TypedData> typedefs;
 		std::vector<Node*> fns;
 		std::vector<Region*> regions;
 		/* the global region; if `Node::parent` is equal

@@ -350,3 +350,41 @@ TEST_F(DumpFixture, EdgeCases)
 	arc::dump(*module);
 	std::cout << "\n";
 }
+
+TEST_F(DumpFixture, Array)
+{
+	builder->function<arc::DataType::VOID>("array_test")
+		.body([](arc::Builder &fb)
+		{
+			auto *array_alloc = fb.array_alloc<arc::DataType::INT32, 5>();
+			auto *index = fb.lit(2);
+			fb.array_index(array_alloc, index);
+			return fb.ret();
+		});
+
+	arc::dump(*module);
+	std::cout << "\n";
+}
+
+TEST_F(DumpFixture, Struct)
+{
+	builder->function<arc::DataType::VOID>("struct_test")
+	   .body([this](arc::Builder &fb)
+	   {
+	   		auto point_layout = fb.struct_type("Point")
+				.field("x", arc::DataType::INT32)
+				.field("y", arc::DataType::INT32)
+				.build();
+
+			const auto& point_type = module->add_t("Point", point_layout);
+			auto *struct_alloc = fb.alloc(point_type);
+			auto *field_offset = fb.lit(4);
+			auto *field_addr = fb.ptr_add(fb.addr_of(struct_alloc), field_offset);
+			auto *int_ptr = fb.cast<arc::DataType::POINTER>(field_addr);
+			auto *value = fb.lit(42);
+			fb.ptr_store(value, int_ptr);
+			return fb.ret();
+	   });
+
+	arc::dump(*module);
+}

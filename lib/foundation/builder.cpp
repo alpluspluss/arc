@@ -21,6 +21,13 @@ namespace arc
 		return current_region;
 	}
 
+	Node *Builder::alloc(const TypedData &type_def)
+	{
+		Node* node = create_node(NodeType::ALLOC, type_def.type());
+		node->value = type_def;
+		return node;
+	}
+
 	Node *Builder::load(Node *location)
 	{
 		if (!location)
@@ -389,11 +396,13 @@ namespace arc
 		DataType elem_type = arr_data.elem_type;
 
 		/* base + (index * sizeof(T)); */
-		Node* elem_size = lit(elem_sz(elem_type));
+		Node* elem_size = lit(static_cast<std::int32_t>(elem_sz(elem_type)));
 		Node* byte_offset = mul(index, elem_size);
 		Node* array_addr = addr_of(array);
 		Node* element_addr = ptr_add(array_addr, byte_offset);
-		return ptr_load(element_addr);
+		Node* n = create_node(NodeType::PTR_LOAD, elem_type);
+		connect_inputs(n, { element_addr });
+		return n;
 	}
 
 	Node *Builder::create_node(NodeType type, DataType result_type)
@@ -448,17 +457,16 @@ namespace arc
 		return *this;
 	}
 
-	Node* StructBuilder::build(const std::uint32_t alignment)
+	TypedData StructBuilder::build(const std::uint32_t alignment)
 	{
-		Node* struct_node = builder.create_node(NodeType::LIT, DataType::STRUCT);
-
 		DataTraits<DataType::STRUCT>::value struct_data;
 		struct_data.fields = std::move(fields);
 		struct_data.alignment = alignment;
 		struct_data.name = struct_name_id;
 
-		struct_node->value.set<decltype(struct_data), DataType::STRUCT>(std::move(struct_data));
-		return struct_node;
+		TypedData type_def;
+		type_def.set<decltype(struct_data), DataType::STRUCT>(std::move(struct_data));
+		return type_def;
 	}
 
 	StoreHelper::StoreHelper(Builder &builder, Node *value) : builder(builder), value(value) {}

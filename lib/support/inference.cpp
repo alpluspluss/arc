@@ -14,8 +14,8 @@ namespace arc
 		if (lhs_type == rhs_type)
 		{
 			/* no promotion needed if element types of both vectors are the same
-				 * however, if one of the element types is not equal or equal to VOID
-				 * then we need to promote both sides */
+			 * however, if one of the element types is not equal or equal to VOID
+			 * then we need to promote both sides */
 			if (lhs_type == DataType::VECTOR)
 			{
 				const auto &lhs_vec = lhs->value.get<DataType::VECTOR>();

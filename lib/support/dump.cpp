@@ -76,15 +76,15 @@ namespace arc
 			}
 		}
 
-		std::string cdttstr(Node &node, Module &module)
+		std::string cdttstr(Node &node, Module &module) // NOLINT(*-no-recursion)
 		{
 			switch (node.type_kind)
 			{
 				case DataType::POINTER:
 				{
-					auto &ptr_data = node.value.get<DataType::POINTER>();
-					if (ptr_data.pointee)
-						return "ptr<" + dttstr(ptr_data.pointee->type_kind) + ">";
+					auto &[pointee, addr_space] = node.value.get<DataType::POINTER>();
+					if (pointee)
+						return "ptr<" + cdttstr(*pointee, module) + ">";
 					return "ptr<unknown>";
 				}
 				case DataType::ARRAY:
@@ -432,13 +432,17 @@ namespace arc
 		if (node.ir_type == NodeType::CALL)
 		{
 			const std::uint32_t num = get_node_number(&node);
-			os << "%" << num << " = ";
+			os << std::format("%{} = ", num);
 			if (node.type_kind != DataType::VOID)
 				os << cdttstr(node, module) << " ";
-			os << "call @" << module.strtable().get(node.inputs[0]->str_id);
-			for (size_t i = 1; i < node.inputs.size(); ++i)
-				os << ", %" << get_node_number(node.inputs[i]);
+			os << std::format("call @{}(", module.strtable().get(node.inputs[0]->str_id));
 
+			for (std::size_t i = 1; i < node.inputs.size(); ++i)
+			{
+				if (i > 1) os << ", ";
+				os << std::format("%{}", get_node_number(node.inputs[i]));
+			}
+			os << ")";
 			return;
 		}
 
