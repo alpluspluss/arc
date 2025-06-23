@@ -112,9 +112,21 @@ namespace arc
 
 		/**
 		 * @brief Register a type
+		 * @param name Name of the type
+		 * @param tdef Data with type
 		 * @return Reference to the TypedData that's registered
 		 */
 		const TypedData& add_t(const std::string& name, TypedData tdef);
+
+		/**
+		 * @brief Look up type
+		 */
+		TypedData& at_t(std::string_view name);
+
+		/**
+		 * @brief Returns all typedefs
+		 */
+		const std::unordered_map<std::string, TypedData>& typemap();
 
 	private:
 		std::unordered_map<std::string, TypedData> typedefs;

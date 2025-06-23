@@ -99,6 +99,8 @@ namespace arc
 		VECTOR_EXTRACT,
 		/** @brief Build a vector from scalar values of same operand */
 		VECTOR_SPLAT,
+		/** @brief Access pointer/data at a specific offset */
+		ACCESS
 	};
 
 	enum class AtomicOrdering : std::uint8_t

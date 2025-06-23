@@ -224,6 +224,8 @@ namespace arc
 					return "vector_extract";
 				case NodeType::VECTOR_SPLAT:
 					return "vector_splat";
+				case NodeType::ACCESS:
+					return "access";
 				default:
 					return "unknown";
 			}
@@ -291,9 +293,21 @@ namespace arc
 				if (i > 0)
 					os << ", ";
 				if (inputs[i])
-					os << "%" << get_node_number(inputs[i]);
+				{
+					if (inputs[i]->ir_type == NodeType::LIT && inputs[i]->users.size() == 1)
+					{
+						os << "#";
+						print_lit_v(*inputs[i], os);
+					}
+					else
+					{
+						os << "%" << get_node_number(inputs[i]);
+					}
+				}
 				else
+				{
 					os << "null";
+				}
 			}
 		}
 
@@ -305,6 +319,8 @@ namespace arc
 				if (node->ir_type == NodeType::ENTRY)
 					os << "        entry\n";
 				else if (node->ir_type == NodeType::PARAM)
+					continue;
+				else if (node->ir_type == NodeType::LIT && node->users.size() == 1)
 					continue;
 				else
 				{
@@ -324,6 +340,34 @@ namespace arc
 		reset_numbering();
 
 		os << "#! module: " << module.name() << "\n";
+		const auto& typedefs = module.typemap();
+		if (!typedefs.empty())
+		{
+			os << "section .__def\n";
+			for (const auto& [name, typedef_data] : typedefs)
+			{
+				os << "    " << name << " = ";
+				if (typedef_data.type() == DataType::STRUCT)
+				{
+					const auto& struct_data = typedef_data.get<DataType::STRUCT>();
+					os << "struct " << name << " {";
+					for (std::size_t i = 0; i < struct_data.fields.size(); ++i)
+					{
+						if (i > 0) os << ", ";
+						auto [name_id, field_type, field_data] = struct_data.fields[i];
+						os << module.strtable().get(name_id) << ": " << dttstr(field_type);
+					}
+					os << "}";
+				}
+				else
+				{
+					os << dttstr(typedef_data.type());
+				}
+				os << ";\n";
+			}
+			os << "end .__def\n\n";
+		}
+
 		if (auto *rodata = module.rodata())
 		{
 			os << "section .__rodata\n";
@@ -436,11 +480,24 @@ namespace arc
 			if (node.type_kind != DataType::VOID)
 				os << cdttstr(node, module) << " ";
 			os << std::format("call @{}(", module.strtable().get(node.inputs[0]->str_id));
-
 			for (std::size_t i = 1; i < node.inputs.size(); ++i)
 			{
-				if (i > 1) os << ", ";
-				os << std::format("%{}", get_node_number(node.inputs[i]));
+				if (i > 1)
+					os << ", ";
+				Node* arg = node.inputs[i];
+				if (arg && arg->ir_type == NodeType::LIT && arg->users.size() == 1)
+				{
+					os << "#";
+					print_lit_v(*arg, os);
+				}
+				else if (arg)
+				{
+					os << "%" << get_node_number(arg);
+				}
+				else
+				{
+					os << "null";
+				}
 			}
 			os << ")";
 			return;
@@ -457,11 +514,38 @@ namespace arc
 			os << ", $" << node.inputs[1]->parent->name();
 			os << ", $" << node.inputs[2]->parent->name();
 			for (std::size_t i = 3; i < node.inputs.size(); ++i)
-				os << ", %" << get_node_number(node.inputs[i]);
+			{
+				os << ", ";
+				Node* arg = node.inputs[i];
+				if (arg && arg->ir_type == NodeType::LIT && arg->users.size() == 1)
+				{
+					os << "#";
+					print_lit_v(*arg, os);
+				}
+				else if (arg)
+				{
+					os << "%" << get_node_number(arg);
+				}
+				else
+				{
+					os << "null";
+				}
+			}
 			return;
 		}
 
 		const std::uint32_t num = get_node_number(&node);
+		if (node.ir_type == NodeType::ALLOC)
+		{
+			os << "%" << num << " = alloc<" << cdttstr(node, module) << ">";
+			if (!node.inputs.empty())
+			{
+				os << " ";
+				print_operands(node.inputs, os);
+			}
+			return;
+		}
+
 		os << "%" << num << " = ";
 
 		/* print type for typed operations */

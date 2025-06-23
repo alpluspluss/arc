@@ -215,7 +215,7 @@ namespace arc
 		}
 		else if constexpr (T == DataType::VECTOR)
 		{
-			DataTraits<DataType::VECTOR>::value vec;
+			DataTraits<DataType::VECTOR>::value vec = {};
 			vec.elem_type = DataType::VOID;
 			vec.lane_count = 0;
 			return vec;
@@ -237,6 +237,13 @@ namespace arc
 		auto value = make_t<T>();
 		data.set<decltype(value), T>(value);
 	}
+
+	/**
+	 * @brief Set TypedData to default value of specified type
+	 * @param data TypedData to initialize
+	 * @param type DataType to set; runtime parameter
+	 */
+	void set_t(TypedData &data, DataType type);
 
 	/**
 	 * @brief Get the size in bytes of a data type

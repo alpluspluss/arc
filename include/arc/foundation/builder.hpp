@@ -394,8 +394,9 @@ namespace arc
 		StructBuilder struct_type(std::string_view name);
 
 		template<DataType ElementType, std::uint32_t Count>
-		Node* array_alloc()
+		Node* array_alloc(std::uint32_t n = 1)
 		{
+			Node* count_lit = lit(n);
 			Node* alloc_node = create_node(NodeType::ALLOC, DataType::ARRAY);
 
 			DataTraits<DataType::ARRAY>::value arr_data;
@@ -403,6 +404,7 @@ namespace arc
 			arr_data.count = Count;
 			arr_data.elements = {};
 			alloc_node->value.set<decltype(arr_data), DataType::ARRAY>(arr_data);
+			connect_inputs(alloc_node, { count_lit });
 			return alloc_node;
 		}
 
@@ -729,7 +731,6 @@ namespace arc
 	{
 		using traits = FunctionTraits<std::decay_t<F>>;
 		constexpr std::size_t expected_params = traits::arity - 1;
-
 		if (parameters.size() != expected_params)
 			throw std::invalid_argument("lambda parameter count doesn't match declared parameters");
 

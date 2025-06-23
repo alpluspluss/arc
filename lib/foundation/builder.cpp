@@ -24,7 +24,18 @@ namespace arc
 	Node *Builder::alloc(const TypedData &type_def)
 	{
 		Node* node = create_node(NodeType::ALLOC, type_def.type());
-		node->value = type_def;
+
+		if (type_def.type() == DataType::STRUCT)
+		{
+			auto inst = make_t<DataType::STRUCT>();
+			inst.name = type_def.get<DataType::STRUCT>().name;
+			node->value.set<decltype(inst), DataType::STRUCT>(inst);
+		}
+		else
+		{
+			set_t(node->value, type_def.type());
+		}
+
 		return node;
 	}
 
@@ -392,17 +403,13 @@ namespace arc
 
 		if (array->type_kind != DataType::ARRAY)
 			throw std::invalid_argument("array_index accepts only array type");
+
 		auto& arr_data = array->value.get<DataType::ARRAY>();
 		DataType elem_type = arr_data.elem_type;
 
-		/* base + (index * sizeof(T)); */
-		Node* elem_size = lit(static_cast<std::int32_t>(elem_sz(elem_type)));
-		Node* byte_offset = mul(index, elem_size);
-		Node* array_addr = addr_of(array);
-		Node* element_addr = ptr_add(array_addr, byte_offset);
-		Node* n = create_node(NodeType::PTR_LOAD, elem_type);
-		connect_inputs(n, { element_addr });
-		return n;
+		Node* node = create_node(NodeType::ACCESS, elem_type);
+		connect_inputs(node, { array, index });
+		return node;
 	}
 
 	Node *Builder::create_node(NodeType type, DataType result_type)
