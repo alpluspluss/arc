@@ -14,8 +14,8 @@ namespace arc
 		if (lhs_type == rhs_type)
 		{
 			/* no promotion needed if element types of both vectors are the same
-				 * however, if one of the element types is not equal or equal to VOID
-				 * then we need to promote both sides */
+			 * however, if one of the element types is not equal or equal to VOID
+			 * then we need to promote both sides */
 			if (lhs_type == DataType::VECTOR)
 			{
 				const auto &lhs_vec = lhs->value.get<DataType::VECTOR>();
@@ -149,5 +149,65 @@ namespace arc
 		}
 
 		return (lhs_rank > rhs_rank) ? lhs : rhs;
+	}
+
+	void set_t(TypedData &data, DataType type)
+	{
+		switch (type)
+		{
+			case DataType::VOID:
+				set_t<DataType::VOID>(data);
+				break;
+			case DataType::BOOL:
+				set_t<DataType::BOOL>(data);
+				break;
+			case DataType::INT8:
+				set_t<DataType::INT8>(data);
+				break;
+			case DataType::INT16:
+				set_t<DataType::INT16>(data);
+				break;
+			case DataType::INT32:
+				set_t<DataType::INT32>(data);
+				break;
+			case DataType::INT64:
+				set_t<DataType::INT64>(data);
+				break;
+			case DataType::UINT8:
+				set_t<DataType::UINT8>(data);
+				break;
+			case DataType::UINT16:
+				set_t<DataType::UINT16>(data);
+				break;
+			case DataType::UINT32:
+				set_t<DataType::UINT32>(data);
+				break;
+			case DataType::UINT64:
+				set_t<DataType::UINT64>(data);
+				break;
+			case DataType::FLOAT32:
+				set_t<DataType::FLOAT32>(data);
+				break;
+			case DataType::FLOAT64:
+				set_t<DataType::FLOAT64>(data);
+				break;
+			case DataType::POINTER:
+				set_t<DataType::POINTER>(data);
+				break;
+			case DataType::ARRAY:
+				set_t<DataType::ARRAY>(data);
+				break;
+			case DataType::STRUCT:
+				set_t<DataType::STRUCT>(data);
+				break;
+			case DataType::FUNCTION:
+				set_t<DataType::FUNCTION>(data);
+				break;
+			case DataType::VECTOR:
+				set_t<DataType::VECTOR>(data);
+				break;
+			default:
+				throw std::invalid_argument("Unknown DataType");
+		}
 	}
 }

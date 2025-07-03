@@ -97,8 +97,30 @@ namespace arc
 		return rodata_region;
 	}
 
-	StringTable & Module::strtable()
+	StringTable &Module::strtable()
 	{
 		return strtb;
+	}
+
+	const TypedData &Module::add_t(const std::string& name, TypedData tdef)
+	{
+		if (typedefs.contains(name))
+			throw std::runtime_error("type '" + name + "' already defined");
+
+		auto [it, inserted] = typedefs.emplace(name, std::move(tdef));
+		return it->second;
+	}
+
+	TypedData& Module::at_t(std::string_view name)
+	{
+		const auto it = typedefs.find(std::string(name));
+		if (it == typedefs.end())
+			throw std::runtime_error("type '" + std::string(name) + "' not found");
+		return it->second;
+	}
+
+	const std::unordered_map<std::string, TypedData> & Module::typemap()
+	{
+		return typedefs;
 	}
 }

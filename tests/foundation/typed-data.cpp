@@ -130,7 +130,7 @@ TEST_F(TypedDataFixture, SelfReferenceStruct)
 	arc::DataTraits<arc::DataType::STRUCT>::value node_struct;
 
 	arc::TypedData next_field_type;
-	arc::DataTraits<arc::DataType::POINTER>::value ptr_type;
+	arc::DataTraits<arc::DataType::POINTER>::value ptr_type = {};
 	ptr_type.pointee = nullptr;
 	ptr_type.addr_space = 0;
 	next_field_type.set<decltype(ptr_type), arc::DataType::POINTER>(std::move(ptr_type));
@@ -203,7 +203,6 @@ TEST_F(TypedDataFixture, NestedStructInstance)
     EXPECT_EQ(nested_addr.name, 50);
     EXPECT_EQ(nested_addr.fields.size(), 2);
 
-    // Check the pointer field instead of string
     EXPECT_EQ(std::get<1>(nested_addr.fields[0]), arc::DataType::POINTER);
     auto &street_pointer = std::get<2>(nested_addr.fields[0]).get<arc::DataType::POINTER>();
     EXPECT_EQ(street_pointer.addr_space, 0);

@@ -49,6 +49,12 @@ namespace arc
 		constexpr slice() noexcept : dt(nullptr), sz(0), cap(0) {}
 
 		/**
+		 * @brief Constructor from raw pointer and size (non-owning view)
+		 */
+		slice(pointer data, size_type count) noexcept
+			: dt(data), sz(count), cap(count) {}
+
+		/**
 		 *	@brief Constructor with initial size.
 		 */
 		explicit slice(size_type n, const allocator_type& = allocator_type())
@@ -111,7 +117,8 @@ namespace arc
 		~slice()
 		{
 			clear();
-			if (dt) {
+			if (dt)
+			{
 				allocator_type alloc;
 				alloc.deallocate(dt, cap);
 			}
