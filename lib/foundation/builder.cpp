@@ -24,17 +24,10 @@ namespace arc
 	Node *Builder::alloc(const TypedData &type_def)
 	{
 		Node* node = create_node(NodeType::ALLOC, type_def.type());
-
 		if (type_def.type() == DataType::STRUCT)
-		{
-			auto inst = make_t<DataType::STRUCT>();
-			inst.name = type_def.get<DataType::STRUCT>().name;
-			node->value.set<decltype(inst), DataType::STRUCT>(inst);
-		}
+			node->value = type_def;
 		else
-		{
 			set_t(node->value, type_def.type());
-		}
 
 		return node;
 	}
@@ -92,9 +85,12 @@ namespace arc
 		if (pointer->type_kind != DataType::POINTER)
 			throw std::invalid_argument("ptr_store requires pointer type");
 
-		const auto& ptr_data = pointer->value.get<DataType::POINTER>();
-		if (ptr_data.pointee && value->type_kind != ptr_data.pointee->type_kind)
-			throw std::invalid_argument("value type must match pointer pointee type");
+		const auto& [pointee, addr_space] = pointer->value.get<DataType::POINTER>();
+		if (pointee)
+		{
+			if (value->type_kind != pointee->type_kind)
+				throw std::invalid_argument("value type must match pointer pointee type");
+		}
 
 		Node* node = create_node(NodeType::PTR_STORE);
 		connect_inputs(node, { value, pointer });
@@ -391,6 +387,34 @@ namespace arc
 	    return node;
 	}
 
+	Node* Builder::struct_field(Node* struct_obj, const std::string& field_name)
+	{
+		if (!struct_obj || struct_obj->type_kind != DataType::STRUCT)
+			throw std::invalid_argument("struct_field requires struct type");
+
+		const auto& struct_data = struct_obj->value.get<DataType::STRUCT>();
+		auto field_type = DataType::VOID;
+		std::size_t field_index = 0;
+		for (std::size_t i = 0; i < struct_data.fields.size(); ++i)
+		{
+			const auto& [name_id, ftype, fdata] = struct_data.fields[i];
+			if (module.strtable().get(name_id) == field_name)
+			{
+				field_type = ftype;
+				field_index = i;
+				break;
+			}
+		}
+
+		if (field_type == DataType::VOID)
+			throw std::invalid_argument("field not found: " + field_name);
+
+		Node* field_index_node = lit(static_cast<std::uint32_t>(field_index));
+		Node* node = create_node(NodeType::ACCESS, field_type);
+		connect_inputs(node, { struct_obj, field_index_node });
+		return node;
+	}
+
 	StructBuilder Builder::struct_type(std::string_view name)
 	{
 		return { *this, name };
@@ -447,33 +471,63 @@ namespace arc
 
 	StructBuilder& StructBuilder::field(const std::string_view name, DataType type)
 	{
-		auto field_name_id = builder.module.intern_str(name);
 		TypedData field_type_data = {}; /* this defaults to VOID, but it should be fine for type descriptors */
-		fields.emplace_back(field_name_id, type, std::move(field_type_data));
-		return *this;
-	}
-
-	StructBuilder& StructBuilder::field(const std::string_view name, Node* type_node)
-	{
-		if (!type_node)
-			throw std::invalid_argument("type_node cannot be null");
-
-		auto field_name_id = builder.module.intern_str(name);
-		TypedData field_type_data = type_node->value;
-		fields.emplace_back(field_name_id, type_node->type_kind, std::move(field_type_data));
+		fields.emplace_back(builder.module.intern_str(name), type, std::move(field_type_data));
 		return *this;
 	}
 
 	TypedData StructBuilder::build(const std::uint32_t alignment)
 	{
-		DataTraits<DataType::STRUCT>::value struct_data;
-		struct_data.fields = std::move(fields);
-		struct_data.alignment = alignment;
+		DataTraits<DataType::STRUCT>::value struct_data = {};
+		struct_data.alignment = is_packed ? 1 : alignment;
 		struct_data.name = struct_name_id;
 
+		u8slice<std::tuple<StringTable::StringId, DataType, TypedData>> final_fields = {};
+		std::size_t current_offset = 0;
+		for (const auto&[name_id, type, type_data] : fields)
+		{
+			if (!is_packed)
+			{
+				const std::size_t field_align = align_t(type);
+				if (std::size_t padding_needed = (field_align - (current_offset % field_align)) % field_align;
+					padding_needed > 0)
+				{
+					auto padding_name = builder.module.intern_str("__pad" + std::to_string(final_fields.size()));
+					TypedData padding_data;
+					set_t(padding_data, padding_t(padding_needed));
+
+					final_fields.emplace_back(padding_name, padding_t(padding_needed), padding_data);
+					current_offset += padding_needed;
+				}
+			}
+
+			final_fields.emplace_back(name_id, type, type_data);
+			current_offset += elem_sz(type);
+		}
+
+		if (!is_packed)
+		{
+			if (const std::size_t final_padding = (struct_data.alignment - (current_offset % struct_data.alignment)) % struct_data.alignment;
+				final_padding > 0)
+			{
+				auto padding_name = builder.module.intern_str("__pad_final");
+				TypedData padding_data;
+				set_t(padding_data, padding_t(final_padding));
+
+				final_fields.emplace_back(padding_name, padding_t(final_padding), padding_data);
+			}
+		}
+
+		struct_data.fields = std::move(final_fields);
 		TypedData type_def;
 		type_def.set<decltype(struct_data), DataType::STRUCT>(std::move(struct_data));
 		return type_def;
+	}
+
+	StructBuilder& StructBuilder::packed()
+	{
+		is_packed = true;
+		return *this;
 	}
 
 	StoreHelper::StoreHelper(Builder &builder, Node *value) : builder(builder), value(value) {}

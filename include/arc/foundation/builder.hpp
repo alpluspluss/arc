@@ -20,6 +20,9 @@ namespace arc
 	class FunctionBuilder;
 	template<DataType T>
 	class BlockBuilder;
+	template<DataType T>
+		requires(T == DataType::FUNCTION || T == DataType::STRUCT)
+	class Opaque;
 
 	/**
 	 * @brief Function traits for FunctionBuilder
@@ -387,6 +390,11 @@ namespace arc
 		Node *cast(Node *value);
 
 		/**
+		 * @brief Access a specific offset of the struct
+		 */
+		Node* struct_field(Node* struct_obj, const std::string& field_name);
+
+		/**
 		 * @brief Create a struct type builder
 		 * @param name Struct name
 		 * @return Struct builder for fluent API
@@ -407,6 +415,11 @@ namespace arc
 			connect_inputs(alloc_node, { count_lit });
 			return alloc_node;
 		}
+
+
+		template<DataType T>
+			requires(T == DataType::FUNCTION /* || T == DataType::STRUCT */)
+		Opaque<T> opaque_t(std::string_view name);
 
 		/**
 		 * @brief Index into an array
@@ -441,6 +454,52 @@ namespace arc
 		friend class BlockBuilder;
 		friend class StoreHelper;
 		friend class StructBuilder;
+		template<DataType T>
+			requires(T == DataType::FUNCTION || T == DataType::STRUCT)
+		friend class Opaque;
+	};
+
+	template<DataType T>
+		requires(T == DataType::FUNCTION || T == DataType::STRUCT)
+	class Opaque
+	{
+	public:
+		Opaque(Builder& b, Node* node) : opaque_node(node), builder(b) {}
+
+		Node* node() const
+		{
+			return opaque_node;
+		}
+
+	protected:
+		Node* opaque_node;
+		Builder& builder;
+	};
+
+	template<>
+	class Opaque<DataType::FUNCTION>
+	{
+	public:
+		Opaque(Builder& b, Node* node) : opaque_node(node), builder(b) {}
+
+		Node* node() const
+		{
+			return opaque_node;
+		}
+
+		template<DataType ReturnType>
+		FunctionBuilder<ReturnType> function()
+		{
+			opaque_node->ir_type = NodeType::FUNCTION;
+			opaque_node->type_kind = DataType::FUNCTION;
+			const std::string_view func_name = builder.module.strtable().get(opaque_node->str_id);
+			Region* func_region = builder.module.create_region(func_name, builder.get_insertion_point());
+			return FunctionBuilder<ReturnType>(builder, opaque_node, func_region);
+		}
+
+	private:
+		Node* opaque_node;
+		Builder& builder;
 	};
 
 	class StructBuilder
@@ -462,24 +521,23 @@ namespace arc
 		StructBuilder& field(std::string_view name, DataType type);
 
 		/**
-		 * @brief Add a field with complex type (pointer, array, etc.)
-		 * @param name Field name
-		 * @param type_node Node representing the field type
-		 * @return Reference to this builder for chaining
-		 */
-		StructBuilder& field(std::string_view name, Node* type_node);
-
-		/**
 		 * @brief Build the struct type
-		 * @param alignment Struct alignment in bytes (optional)
+		 * @param alignment Struct alignment in bytes; optional
 		 * @return TypedData representing the struct type
 		 */
 		TypedData build(std::uint32_t alignment = 8);
 
+		/**
+		 * @brief Mark the struct as packed (no padding)
+		 * @return Reference to this builder for chaining
+		 */
+		StructBuilder& packed();
+
 	private:
 		Builder& builder;
+		u8slice<std::tuple<StringTable::StringId, DataType, TypedData>> fields{};
 		StringTable::StringId struct_name_id;
-		u8slice<std::tuple<StringTable::StringId, DataType, TypedData>> fields;
+		bool is_packed = false;
 	};
 
 	/**
@@ -856,6 +914,20 @@ namespace arc
 		Node *node = create_node(NodeType::CAST, TargetType);
 		connect_inputs(node, { value });
 		return node;
+	}
+
+	template<DataType T>
+		requires(T == DataType::FUNCTION /* || T == DataType::STRUCT */)
+	Opaque<T> Builder::opaque_t(std::string_view name)
+	{
+		if constexpr (T == DataType::FUNCTION)
+		{
+			Node* func_node = create_node(NodeType::FUNCTION, DataType::FUNCTION);
+			func_node->str_id = module.intern_str(name);
+			module.add_fn(func_node);
+			return Opaque<DataType::FUNCTION>(*this, func_node);
+		}
+		std::unreachable();
 	}
 
 	template<DataType ReturnType>

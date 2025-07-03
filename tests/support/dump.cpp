@@ -365,3 +365,52 @@ TEST_F(DumpFixture, Array)
 	arc::dump(*module);
 	std::cout << "\n";
 }
+
+TEST_F(DumpFixture, StructTypes)
+{
+	auto person_type = builder->struct_type("Person")
+		.field("age", arc::DataType::INT32)
+		.field("height", arc::DataType::FLOAT32)
+		.field("is_student", arc::DataType::BOOL)
+		.build();
+
+	module->add_t("Person", person_type);
+	builder->function<arc::DataType::VOID>("struct_test")
+		.body([&](arc::Builder &fb)
+		{
+			auto *person = fb.alloc(person_type);
+			auto *age_field = fb.struct_field(person, "age");
+			auto *age_value = fb.lit(25);
+			fb.store(age_value, age_field);
+			return fb.ret();
+		});
+
+	arc::dump(*module);
+	std::cout << "\n";
+}
+
+TEST_F(DumpFixture, RecursiveFunction)
+{
+	auto opaque_fn = builder->opaque_t<arc::DataType::FUNCTION>("factorial");
+
+	opaque_fn.function<arc::DataType::INT32>()
+		.param<arc::DataType::INT32>("n")
+		.body([&opaque_fn](arc::Builder &fb, arc::Node *n)
+		{
+			auto* zero = fb.lit(0);
+			auto* one = fb.lit(1);
+			auto* is_zero = fb.eq(n, zero);
+
+			const auto true_block = fb.block<arc::DataType::INT32>("base_case");
+			const auto false_block = fb.block<arc::DataType::INT32>("recursive_case");
+
+			fb.branch(is_zero, true_block.entry(), false_block.entry());
+
+			auto* n_minus_1 = fb.sub(n, one);
+			auto* recursive_call = fb.call(opaque_fn.node(), {n_minus_1});
+			auto* result = fb.mul(n, recursive_call);
+
+			return fb.ret(result);
+		});
+	arc::dump(*module);
+}

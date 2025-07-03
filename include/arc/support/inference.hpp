@@ -271,9 +271,79 @@ namespace arc
 			case DataType::POINTER:
 				return 8;
 			case DataType::VOID:
-				return 0;
 			default:
 				return 0;
 		}
+	}
+
+	/**
+	 * @brief Get the alignment requirement for a data type
+	 * @param type The data type to get alignment for
+	 * @return Alignment in bytes
+	 */
+	constexpr std::uint32_t align_t(const DataType type) noexcept
+	{
+	    switch (type)
+	    {
+	        case DataType::BOOL:
+	        case DataType::INT8:
+	        case DataType::UINT8:
+	            return 1;
+	        case DataType::INT16:
+	        case DataType::UINT16:
+	            return 2;
+	        case DataType::INT32:
+	        case DataType::UINT32:
+	        case DataType::FLOAT32:
+	            return 4;
+	        case DataType::INT64:
+	        case DataType::UINT64:
+	        case DataType::FLOAT64:
+	        case DataType::POINTER:
+	            return 8;
+	        case DataType::VOID:
+	        default:
+	            return 1;
+	    }
+	}
+
+	/**
+	 * @brief Get the most appropriate padding type for a given padding size
+	 * @param padding_size Size of padding needed in bytes
+	 * @return DataType that best fits the padding size
+	 */
+	constexpr DataType padding_t(const std::size_t padding_size) noexcept
+	{
+	    if (padding_size >= 8)
+	    	return DataType::UINT64;
+	    if (padding_size >= 4)
+	    	return DataType::UINT32;
+	    if (padding_size >= 2)
+	    	return DataType::UINT16;
+	    return DataType::UINT8;
+	}
+
+	/**
+	 * @brief Calculate the total size of a struct with padding
+	 * @param struct_data The struct data to calculate size for
+	 * @return Total size in bytes including padding
+	 */
+	constexpr std::size_t compute_struct_size(const DataTraits<DataType::STRUCT>::value& struct_data) noexcept
+	{
+		/* packed structs have no padding, so we can just sum the field sizes */
+	    if (struct_data.alignment == 1)
+	    {
+	        std::size_t size = 0;
+	        for (const auto& [name_id, field_type, field_data] : struct_data.fields)
+	        {
+	            size += elem_sz(field_type);
+	        }
+	        return size;
+	    }
+
+	    std::size_t size = 0;
+	    for (const auto& [name_id, field_type, field_data] : struct_data.fields)
+	        size += elem_sz(field_type);
+	    return size;
 	}
 }
