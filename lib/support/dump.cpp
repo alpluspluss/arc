@@ -1,6 +1,6 @@
 /* this project is part of the Arc project; licensed under the MIT license. see LICENSE for more info */
 
-#include <iostream>
+#include <print>
 #include <string>
 #include <unordered_map>
 #include <arc/foundation/module.hpp>
@@ -18,11 +18,11 @@ namespace arc
 
 		std::uint32_t get_node_number(Node *node)
 		{
-			if (auto it = node_numbers.find(node);
+			if (const auto it = node_numbers.find(node);
 				it != node_numbers.end())
 				return it->second;
 
-			std::uint32_t num = next_node_number++;
+			const std::uint32_t num = next_node_number++;
 			node_numbers[node] = num;
 			return num;
 		}
@@ -33,7 +33,29 @@ namespace arc
 			next_node_number = 1;
 		}
 
-		std::string dttstr(const DataType type)
+		bool is_padding_field(const std::string &field_name)
+		{
+			return field_name.starts_with("__pad");
+		}
+
+		std::size_t get_padding_size(DataType padding_type)
+		{
+			switch (padding_type)
+			{
+				case DataType::UINT8:
+					return 1;
+				case DataType::UINT16:
+					return 2;
+				case DataType::UINT32:
+					return 4;
+				case DataType::UINT64:
+					return 8;
+				default:
+					return 0;
+			}
+		}
+
+		std::string dttstr(DataType type)
 		{
 			switch (type)
 			{
@@ -76,46 +98,161 @@ namespace arc
 			}
 		}
 
+		std::string resolve_type_name(const TypedData &type_data, Module &module)
+		{
+			if (type_data.type() != DataType::STRUCT)
+				return dttstr(type_data.type());
+
+			const auto &struct_data = type_data.get<DataType::STRUCT>();
+			auto struct_name = module.strtable().get(struct_data.name);
+			if (auto x = std::string(struct_name);
+				module.typemap().contains(x))
+				return x;
+
+			return std::format("struct {}", struct_name);
+		}
+
+		std::string pointer_type_str(const DataTraits<DataType::POINTER>::value &ptr_data, Module &module,
+		                             const std::string &context_struct = "")
+		{
+			if (!ptr_data.pointee)
+			{
+				if (!context_struct.empty())
+					return std::format("ptr<{}>", context_struct);
+				return "ptr<unknown>";
+			}
+
+			if (ptr_data.pointee->type_kind == DataType::STRUCT && ptr_data.pointee->value.type() == DataType::STRUCT)
+			{
+				std::string pointee_name = resolve_type_name(ptr_data.pointee->value, module);
+				return std::format("ptr<{}>", pointee_name);
+			}
+
+			return std::format("ptr<{}>", dttstr(ptr_data.pointee->type_kind));
+		}
+
+		/* lookup field type from ACCESS node by examining the struct definition */
+		std::string resolve_access_type(Node &node, Module &module)
+		{
+			if (node.inputs.size() < 2)
+				return "unknown";
+
+			Node *container = node.inputs[0];
+			Node *index_node = node.inputs[1];
+
+			/* get the field index */
+			if (index_node->ir_type != NodeType::LIT || index_node->type_kind != DataType::UINT32)
+				return "unknown";
+
+			std::uint32_t field_index = index_node->value.get<DataType::UINT32>();
+
+			/* get the struct type name from the container */
+			std::string struct_name;
+			if (container->type_kind == DataType::STRUCT && container->value.type() == DataType::STRUCT)
+			{
+				struct_name = resolve_type_name(container->value, module);
+			}
+			else
+			{
+				return "unknown";
+			}
+
+			/* look up the struct definition in the module's type registry */
+			const auto &typemap = module.typemap();
+			auto it = typemap.find(struct_name);
+			if (it == typemap.end() || it->second.type() != DataType::STRUCT)
+				return "unknown";
+
+			const auto &struct_data = it->second.get<DataType::STRUCT>();
+
+			/* find the field at the given index. we skip padding fields */
+			std::size_t actual_field_index = 0;
+			for (const auto &[name_id, field_type, field_data]: struct_data.fields)
+			{
+				auto field_name = module.strtable().get(name_id);
+				if (is_padding_field(std::string(field_name)))
+					continue;
+
+				if (actual_field_index == field_index)
+				{
+					if (field_type == DataType::POINTER && field_data.type() == DataType::POINTER)
+					{
+						const auto &ptr_data = field_data.get<DataType::POINTER>();
+						return pointer_type_str(ptr_data, module, struct_name);
+					}
+					if (field_type == DataType::STRUCT && field_data.type() == DataType::STRUCT)
+						return resolve_type_name(field_data, module);
+
+					return dttstr(field_type);
+				}
+				actual_field_index++;
+			}
+
+			return "unknown";
+		}
+
 		std::string cdttstr(Node &node, Module &module) // NOLINT(*-no-recursion)
 		{
 			switch (node.type_kind)
 			{
 				case DataType::POINTER:
 				{
-					auto &[pointee, addr_space] = node.value.get<DataType::POINTER>();
-					if (pointee)
-						return "ptr<" + cdttstr(*pointee, module) + ">";
+					/* for ACCESS nodes, use the stored value directly */
+					if (node.ir_type == NodeType::ACCESS && node.value.type() == DataType::POINTER)
+					{
+						const auto &ptr_data = node.value.get<DataType::POINTER>();
+						/* if this is a self-reference [pointee = nullptr],
+						 * we can try to resolve the type from the context */
+						if (!ptr_data.pointee && node.inputs.size() >= 1)
+						{
+							if (Node* container = node.inputs[0];
+								container->type_kind == DataType::STRUCT && container->value.type() == DataType::STRUCT)
+							{
+								std::string struct_name = resolve_type_name(container->value, module);
+								return std::format("ptr<{}>", struct_name);
+							}
+						}
+						return pointer_type_str(ptr_data, module);
+					}
+
+					/* for LOAD nodes, it needs to inherit the type from the source node,
+					 * so we can resolve it directly from the input */
+					if (node.ir_type == NodeType::LOAD && node.inputs.size() >= 1)
+					{
+						if (Node* source = node.inputs[0];
+							source->type_kind == DataType::POINTER)
+						{
+							return cdttstr(*source, module);
+						}
+					}
+
+					/* only fallback to registry lookup only if value is not available
+					 * this happens rarely and the case shouldn't ever hit "ptr<unknown>" */
+					if (node.ir_type == NodeType::ACCESS)
+						return resolve_access_type(node, module);
+
+					if (node.value.type() == DataType::POINTER)
+					{
+						const auto &ptr_data = node.value.get<DataType::POINTER>();
+						return pointer_type_str(ptr_data, module);
+					}
 					return "ptr<unknown>";
 				}
 				case DataType::ARRAY:
 				{
-					auto &arr_data = node.value.get<DataType::ARRAY>();
-					return "arr<" + dttstr(arr_data.elem_type) + " x " +
-					       std::to_string(arr_data.count) + ">";
+					const auto &arr_data = node.value.get<DataType::ARRAY>();
+					return std::format("arr<{} x {}>", dttstr(arr_data.elem_type), arr_data.count);
 				}
 				case DataType::VECTOR:
 				{
-					auto &vec_data = node.value.get<DataType::VECTOR>();
-					return "vec<" + dttstr(vec_data.elem_type) + " x " +
-					       std::to_string(vec_data.lane_count) + ">";
+					const auto &vec_data = node.value.get<DataType::VECTOR>();
+					return std::format("vec<{} x {}>", dttstr(vec_data.elem_type), vec_data.lane_count);
 				}
 				case DataType::STRUCT:
 				{
-					auto &struct_data = node.value.get<DataType::STRUCT>();
-					std::string result = "struct ";
-					if (struct_data.name != StringTable::StringId {})
-						result += module.strtable().get(struct_data.name);
-
-					result += " {";
-					for (u8slice<Node *>::size_type i = 0; i < struct_data.fields.size(); ++i)
-					{
-						if (i > 0)
-							result += ", ";
-						auto &[name_id, field_type, field_data] = struct_data.fields[i];
-						result += std::string(module.strtable().get(name_id)) + ": " + dttstr(field_type);
-					}
-					result += "}";
-					return result;
+					if (node.value.type() == DataType::STRUCT)
+						return resolve_type_name(node.value, module);
+					return "struct";
 				}
 				case DataType::FUNCTION:
 				{
@@ -127,10 +264,9 @@ namespace arc
 						result += dttstr(node.inputs[i]->type_kind);
 					}
 
-					auto& fn_data = node.value.get<DataType::FUNCTION>();
+					const auto &fn_data = node.value.get<DataType::FUNCTION>();
 					DataType return_type = fn_data.return_type ? fn_data.return_type->type() : DataType::VOID;
-
-					result += ") -> " + dttstr(return_type);
+					result += std::format(") -> {}", dttstr(return_type));
 					return result;
 				}
 				default:
@@ -138,7 +274,7 @@ namespace arc
 			}
 		}
 
-		std::string ntttstr(const NodeType type)
+		std::string ntttstr(NodeType type)
 		{
 			switch (type)
 			{
@@ -149,7 +285,7 @@ namespace arc
 				case NodeType::PARAM:
 					return "param";
 				case NodeType::LIT:
-					return ""; /* type already tells what is it */
+					return "";
 				case NodeType::ADD:
 					return "add";
 				case NodeType::SUB:
@@ -234,13 +370,13 @@ namespace arc
 		void print_node_traits(Node &node, std::ostream &os)
 		{
 			if ((node.traits & NodeTraits::EXPORT) != NodeTraits::NONE)
-				os << "export ";
+				std::print(os, "export ");
 			if ((node.traits & NodeTraits::DRIVER) != NodeTraits::NONE)
-				os << "driver ";
+				std::print(os, "driver ");
 			if ((node.traits & NodeTraits::EXTERN) != NodeTraits::NONE)
-				os << "extern ";
+				std::print(os, "extern ");
 			if ((node.traits & NodeTraits::VOLATILE) != NodeTraits::NONE)
-				os << "volatile ";
+				std::print(os, "volatile ");
 		}
 
 		void print_lit_v(Node &node, std::ostream &os)
@@ -248,40 +384,40 @@ namespace arc
 			switch (node.type_kind)
 			{
 				case DataType::BOOL:
-					os << (node.value.get<DataType::BOOL>() ? "true" : "false");
+					std::print(os, "{}", node.value.get<DataType::BOOL>() ? "true" : "false");
 					break;
 				case DataType::INT8:
-					os << static_cast<int>(node.value.get<DataType::INT8>());
+					std::print(os, "{}", static_cast<int>(node.value.get<DataType::INT8>()));
 					break;
 				case DataType::INT16:
-					os << node.value.get<DataType::INT16>();
+					std::print(os, "{}", node.value.get<DataType::INT16>());
 					break;
 				case DataType::INT32:
-					os << node.value.get<DataType::INT32>();
+					std::print(os, "{}", node.value.get<DataType::INT32>());
 					break;
 				case DataType::INT64:
-					os << node.value.get<DataType::INT64>();
+					std::print(os, "{}", node.value.get<DataType::INT64>());
 					break;
 				case DataType::UINT8:
-					os << static_cast<unsigned>(node.value.get<DataType::UINT8>());
+					std::print(os, "{}", static_cast<unsigned>(node.value.get<DataType::UINT8>()));
 					break;
 				case DataType::UINT16:
-					os << node.value.get<DataType::UINT16>();
+					std::print(os, "{}", node.value.get<DataType::UINT16>());
 					break;
 				case DataType::UINT32:
-					os << node.value.get<DataType::UINT32>();
+					std::print(os, "{}", node.value.get<DataType::UINT32>());
 					break;
 				case DataType::UINT64:
-					os << node.value.get<DataType::UINT64>();
+					std::print(os, "{}", node.value.get<DataType::UINT64>());
 					break;
 				case DataType::FLOAT32:
-					os << node.value.get<DataType::FLOAT32>();
+					std::print(os, "{}", node.value.get<DataType::FLOAT32>());
 					break;
 				case DataType::FLOAT64:
-					os << node.value.get<DataType::FLOAT64>();
+					std::print(os, "{}", node.value.get<DataType::FLOAT64>());
 					break;
 				default:
-					os << "?";
+					std::print(os, "?");
 					break;
 			}
 		}
@@ -291,45 +427,98 @@ namespace arc
 			for (u8slice<Node *>::size_type i = 0; i < inputs.size(); ++i)
 			{
 				if (i > 0)
-					os << ", ";
+					std::print(os, ", ");
 				if (inputs[i])
 				{
 					if (inputs[i]->ir_type == NodeType::LIT && inputs[i]->users.size() == 1)
 					{
-						os << "#";
+						std::print(os, "#");
 						print_lit_v(*inputs[i], os);
 					}
 					else
 					{
-						os << "%" << get_node_number(inputs[i]);
+						std::print(os, "%{}", get_node_number(inputs[i]));
 					}
 				}
 				else
 				{
-					os << "null";
+					std::print(os, "null");
 				}
 			}
 		}
 
+		void dump_struct_definition(const std::string &name, const DataTraits<DataType::STRUCT>::value &struct_data,
+		                            Module &module, std::ostream &os)
+		{
+			std::print(os, "    {} = struct", name);
+
+			if (struct_data.alignment != 8)
+				std::print(os, " alignas({})", struct_data.alignment);
+
+			std::print(os, " {{\n");
+
+			std::size_t pending_padding = 0;
+
+			for (std::size_t i = 0; i < struct_data.fields.size(); ++i)
+			{
+				const auto &[name_id, field_type, field_data] = struct_data.fields[i];
+				auto field_name = module.strtable().get(name_id);
+				if (is_padding_field(field_name.data()))
+				{
+					pending_padding += get_padding_size(field_type);
+					continue;
+				}
+
+				if (pending_padding > 0)
+				{
+					std::print(os, "        /* {} bytes padding */\n", pending_padding);
+					pending_padding = 0;
+				}
+
+				std::print(os, "        {}: ", field_name);
+
+				if (field_type == DataType::POINTER && field_data.type() == DataType::POINTER)
+				{
+					const auto &ptr_data = field_data.get<DataType::POINTER>();
+					std::print(os, "{}", pointer_type_str(ptr_data, module, name));
+				}
+				else if (field_type == DataType::STRUCT && field_data.type() == DataType::STRUCT)
+				{
+					std::print(os, "{}", resolve_type_name(field_data, module));
+				}
+				else
+				{
+					std::print(os, "{}", dttstr(field_type));
+				}
+
+				std::print(os, ",\n");
+			}
+
+			if (pending_padding > 0)
+				std::print(os, "        /* {} bytes padding */\n", pending_padding);
+
+			std::print(os, "    }};\n");
+		}
+
 		void dump_regions(Region &region, Module &module, std::ostream &os) // NOLINT(*-no-recursion)
 		{
-			os << "    $" << region.name() << ":\n";
+			std::print(os, "    ${}:\n", region.name());
 			for (Node *node: region.nodes())
 			{
 				if (node->ir_type == NodeType::ENTRY)
-					os << "        entry\n";
+					std::print(os, "        entry\n");
 				else if (node->ir_type == NodeType::PARAM)
 					continue;
 				else if (node->ir_type == NodeType::LIT && node->users.size() == 1)
 					continue;
 				else
 				{
-					os << "        ";
+					std::print(os, "        ");
 					dump(*node, module, os);
-					os << ";\n";
+					std::print(os, ";\n");
 				}
 			}
-			os << "\n";
+			/* removed extra newline here */
 			for (Region *child: region.children())
 				dump_regions(*child, module, os);
 		}
@@ -339,48 +528,39 @@ namespace arc
 	{
 		reset_numbering();
 
-		os << "#! module: " << module.name() << "\n";
-		const auto& typedefs = module.typemap();
+		std::print(os, "#! module: {}\n", module.name());
+		const auto &typedefs = module.typemap();
 		if (!typedefs.empty())
 		{
-			os << "section .__def\n";
-			for (const auto& [name, typedef_data] : typedefs)
+			std::print(os, "section .__def\n");
+			for (const auto &[name, typedef_data]: typedefs)
 			{
-				os << "    " << name << " = ";
 				if (typedef_data.type() == DataType::STRUCT)
 				{
-					const auto& struct_data = typedef_data.get<DataType::STRUCT>();
-					os << "struct " << name << " {";
-					for (std::size_t i = 0; i < struct_data.fields.size(); ++i)
-					{
-						if (i > 0) os << ", ";
-						auto [name_id, field_type, field_data] = struct_data.fields[i];
-						os << module.strtable().get(name_id) << ": " << dttstr(field_type);
-					}
-					os << "}";
+					const auto &struct_data = typedef_data.get<DataType::STRUCT>();
+					dump_struct_definition(name, struct_data, module, os);
 				}
 				else
 				{
-					os << dttstr(typedef_data.type());
+					std::print(os, "    {} = {};\n", name, dttstr(typedef_data.type()));
 				}
-				os << ";\n";
 			}
-			os << "end .__def\n\n";
+			std::print(os, "end .__def\n\n");
 		}
 
 		if (auto *rodata = module.rodata())
 		{
-			os << "section .__rodata\n";
+			std::print(os, "section .__rodata\n");
 			for (Node *node: rodata->nodes())
 			{
 				if (node->ir_type != NodeType::ENTRY)
 				{
-					os << "    ";
+					std::print(os, "    ");
 					dump(*node, module, os);
-					os << ";\n";
+					std::print(os, ";\n");
 				}
 			}
-			os << "end .__rodata\n\n";
+			std::print(os, "end .__rodata\n\n");
 		}
 
 		for (Node *func: module.functions())
@@ -388,23 +568,25 @@ namespace arc
 			if (func->ir_type == NodeType::FUNCTION)
 			{
 				print_node_traits(*func, os);
-				auto& fn_data = func->value.get<DataType::FUNCTION>();
+				const auto &fn_data = func->value.get<DataType::FUNCTION>();
 				DataType return_type = fn_data.return_type ? fn_data.return_type->type() : DataType::VOID;
 
-				std::vector<Node*> params;
-				for (Node* param : func->inputs)
+				std::vector<Node *> params;
+				for (Node *param: func->inputs)
 				{
 					if (param->ir_type == NodeType::PARAM)
 						params.push_back(param);
 				}
 
-				os << "fn @" << module.strtable().get(func->str_id) << "(";
+				std::print(os, "fn @{}(", module.strtable().get(func->str_id));
 				for (std::size_t i = 0; i < params.size(); ++i)
 				{
-					if (i > 0) os << ", ";
-					os << cdttstr(*params[i], module) << " %" << get_node_number(params[i]);
+					if (i > 0)
+						std::print(os, ", ");
+					std::print(os, "{} %{}", cdttstr(*params[i], module), get_node_number(params[i]));
 				}
-				os << ") -> " << dttstr(return_type) << "\n{\n";
+				std::print(os, ") -> {}\n{{\n", dttstr(return_type));
+
 				for (Region *region: module.root()->children())
 				{
 					if (region->name() == module.strtable().get(func->str_id))
@@ -414,43 +596,42 @@ namespace arc
 					}
 				}
 
-				os << "}\n\n";
+				std::print(os, "}}\n"); /* removed extra newline */
 			}
 		}
 	}
 
 	void dump(Region &region, Module &module, std::ostream &os) // NOLINT(*-no-recursion)
 	{
-		os << "$" << region.name() << ":\n";
+		std::print(os, "${}:\n", region.name());
 		for (Node *node: region.nodes())
 		{
-			os << "    ";
+			std::print(os, "    ");
 			dump(*node, module, os);
-			os << ";\n";
+			std::print(os, ";\n");
 		}
 
 		for (Region *child: region.children())
 		{
-			os << "\n";
+			std::print(os, "\n");
 			dump(*child, module, os);
 		}
 	}
 
 	void dump(Node &node, Module &module, std::ostream &os)
 	{
-		/* special cases that don't use standard format */
 		if (node.ir_type == NodeType::ENTRY)
 		{
-			os << "entry";
+			std::print(os, "entry");
 			return;
 		}
 
 		if (node.ir_type == NodeType::RET)
 		{
-			os << "ret";
+			std::print(os, "ret");
 			if (!node.inputs.empty())
 			{
-				os << " ";
+				std::print(os, " ");
 				print_operands(node.inputs, os);
 			}
 			return;
@@ -459,76 +640,77 @@ namespace arc
 		if (node.ir_type == NodeType::BRANCH)
 		{
 			const std::uint32_t num = get_node_number(&node);
-			os << "%" << num << " = branch ";
-			os << "%" << get_node_number(node.inputs[0]) << " ? ";
-			os << "$" << node.inputs[1]->parent->name() << " : ";
-			os << "$" << node.inputs[2]->parent->name();
+			std::print(os, "%{} = branch %{} ? ${} : ${}",
+			           num, get_node_number(node.inputs[0]),
+			           node.inputs[1]->parent->name(),
+			           node.inputs[2]->parent->name());
 			return;
 		}
 
 		if (node.ir_type == NodeType::JUMP)
 		{
 			const std::uint32_t num = get_node_number(&node);
-			os << "%" << num << " = jump $" << node.inputs[0]->parent->name();
+			std::print(os, "%{} = jump ${}", num, node.inputs[0]->parent->name());
 			return;
 		}
 
 		if (node.ir_type == NodeType::CALL)
 		{
 			const std::uint32_t num = get_node_number(&node);
-			os << std::format("%{} = ", num);
+			std::print(os, "%{} = ", num);
 			if (node.type_kind != DataType::VOID)
-				os << cdttstr(node, module) << " ";
-			os << std::format("call @{}(", module.strtable().get(node.inputs[0]->str_id));
+				std::print(os, "{} ", cdttstr(node, module));
+			std::print(os, "call @{}(", module.strtable().get(node.inputs[0]->str_id));
 			for (std::size_t i = 1; i < node.inputs.size(); ++i)
 			{
 				if (i > 1)
-					os << ", ";
-				Node* arg = node.inputs[i];
+					std::print(os, ", ");
+				Node *arg = node.inputs[i];
 				if (arg && arg->ir_type == NodeType::LIT && arg->users.size() == 1)
 				{
-					os << "#";
+					std::print(os, "#");
 					print_lit_v(*arg, os);
 				}
 				else if (arg)
 				{
-					os << "%" << get_node_number(arg);
+					std::print(os, "%{}", get_node_number(arg));
 				}
 				else
 				{
-					os << "null";
+					std::print(os, "null");
 				}
 			}
-			os << ")";
+			std::print(os, ")");
 			return;
 		}
 
 		if (node.ir_type == NodeType::INVOKE)
 		{
 			const std::uint32_t num = get_node_number(&node);
-			os << "%" << num << " = ";
+			std::print(os, "%{} = ", num);
 			if (node.type_kind != DataType::VOID)
-				os << cdttstr(node, module) << " ";
+				std::print(os, "{} ", cdttstr(node, module));
 
-			os << "invoke @" << module.strtable().get(node.inputs[0]->str_id);
-			os << ", $" << node.inputs[1]->parent->name();
-			os << ", $" << node.inputs[2]->parent->name();
+			std::print(os, "invoke @{}, ${}, ${}",
+			           module.strtable().get(node.inputs[0]->str_id),
+			           node.inputs[1]->parent->name(),
+			           node.inputs[2]->parent->name());
 			for (std::size_t i = 3; i < node.inputs.size(); ++i)
 			{
-				os << ", ";
-				Node* arg = node.inputs[i];
+				std::print(os, ", ");
+				Node *arg = node.inputs[i];
 				if (arg && arg->ir_type == NodeType::LIT && arg->users.size() == 1)
 				{
-					os << "#";
+					std::print(os, "#");
 					print_lit_v(*arg, os);
 				}
 				else if (arg)
 				{
-					os << "%" << get_node_number(arg);
+					std::print(os, "%{}", get_node_number(arg));
 				}
 				else
 				{
-					os << "null";
+					std::print(os, "null");
 				}
 			}
 			return;
@@ -537,34 +719,32 @@ namespace arc
 		const std::uint32_t num = get_node_number(&node);
 		if (node.ir_type == NodeType::ALLOC)
 		{
-			os << "%" << num << " = alloc<" << cdttstr(node, module) << ">";
+			std::print(os, "%{} = alloc<{}>", num, cdttstr(node, module));
 			if (!node.inputs.empty())
 			{
-				os << " ";
+				std::print(os, " ");
 				print_operands(node.inputs, os);
 			}
 			return;
 		}
 
-		os << "%" << num << " = ";
-
-		/* print type for typed operations */
+		std::print(os, "%{} = ", num);
 		if (node.type_kind != DataType::VOID)
-			os << cdttstr(node, module) << " ";
+			std::print(os, "{} ", cdttstr(node, module));
 
-		os << ntttstr(node.ir_type); /* print operation */
+		std::print(os, "{}", ntttstr(node.ir_type));
 		if (node.ir_type == NodeType::LIT)
 		{
 			print_lit_v(node, os);
 		}
 		else if (node.ir_type == NodeType::ALLOC || node.ir_type == NodeType::CAST)
 		{
-			os << "<" << cdttstr(node, module) << "> ";
+			std::print(os, "<{}> ", cdttstr(node, module));
 			print_operands(node.inputs, os);
 		}
 		else if (!node.inputs.empty())
 		{
-			os << " ";
+			std::print(os, " ");
 			print_operands(node.inputs, os);
 		}
 	}

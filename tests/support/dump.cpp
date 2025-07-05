@@ -459,13 +459,11 @@ TEST_F(DumpFixture, SelfReferentialStructDump)
             auto *node1 = fb.alloc(node_type);
             auto *node2 = fb.alloc(node_type);
 
-            /* set data fields */
             auto *data1 = fb.struct_field(node1, "data");
             auto *data2 = fb.struct_field(node2, "data");
             fb.store(fb.lit(42), data1);
             fb.store(fb.lit(84), data2);
 
-            /* link nodes */
             auto *next1 = fb.struct_field(node1, "next");
             auto *node2_addr = fb.addr_of(node2);
             fb.ptr_store(node2_addr, next1);
@@ -496,7 +494,6 @@ TEST_F(DumpFixture, ComplexRecursiveStructDump)
             auto *left_child = fb.alloc(tree_type);
             auto *right_child = fb.alloc(tree_type);
 
-            /* set values */
             auto *root_value = fb.struct_field(root, "value");
             auto *left_value = fb.struct_field(left_child, "value");
             auto *right_value = fb.struct_field(right_child, "value");
@@ -505,7 +502,6 @@ TEST_F(DumpFixture, ComplexRecursiveStructDump)
             fb.store(fb.lit(5), left_value);
             fb.store(fb.lit(15), right_value);
 
-            /* link tree structure */
             auto *root_left = fb.struct_field(root, "left");
             auto *root_right = fb.struct_field(root, "right");
             auto *left_parent = fb.struct_field(left_child, "parent");
@@ -633,7 +629,6 @@ TEST_F(DumpFixture, StructWithPointersDump)
 
 TEST_F(DumpFixture, MultipleStructTypesDump)
 {
-    /* define multiple related struct types */
     auto node_type = builder->struct_type("Node")
         .field("id", arc::DataType::UINT32)
         .self_ptr("next")
