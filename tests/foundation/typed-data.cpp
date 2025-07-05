@@ -224,8 +224,8 @@ TEST_F(TypedDataFixture, TypeCheck)
 TEST_F(TypedDataFixture, TypeMismatchThrows)
 {
 	data.set<int, arc::DataType::INT32>(42);
-	EXPECT_THROW(data.get<arc::DataType::FLOAT32>(), std::bad_cast);
-	EXPECT_THROW(data.get<arc::DataType::BOOL>(), std::bad_cast);
+	EXPECT_THROW(data.get<arc::DataType::FLOAT32>(), std::bad_variant_access);
+	EXPECT_THROW(data.get<arc::DataType::BOOL>(), std::bad_variant_access);
 }
 
 TEST_F(TypedDataFixture, CopyConstructor)
@@ -299,7 +299,7 @@ TEST_F(TypedDataFixture, OverwriteData)
 	EXPECT_EQ(data.type(), arc::DataType::FLOAT32);
 	EXPECT_FLOAT_EQ(data.get<arc::DataType::FLOAT32>(), 3.14f);
 
-	EXPECT_THROW(data.get<arc::DataType::INT32>(), std::bad_cast);
+	EXPECT_THROW(data.get<arc::DataType::INT32>(), std::bad_variant_access);
 }
 
 TEST_F(TypedDataFixture, VoidType)
@@ -314,7 +314,7 @@ TEST_F(TypedDataFixture, VoidType)
 
 TEST_F(TypedDataFixture, FunctionType)
 {
-	arc::DataTraits<arc::DataType::FUNCTION>::value func_data;
+	arc::DataTraits<arc::DataType::FUNCTION>::value func_data = {};
 
 	data.set<decltype(func_data), arc::DataType::FUNCTION>(func_data);
 	EXPECT_EQ(data.type(), arc::DataType::FUNCTION);

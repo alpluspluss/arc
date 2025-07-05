@@ -226,7 +226,9 @@ namespace arc
 	{
 		struct value
 		{
-			TypedData* return_type;
+			/* always initialized to nullptr just so the TypedData::destroy() doesn't
+		     * accidentally clear it */
+			TypedData* return_type = nullptr;
 		};
 
 		/* parameter types can be determined by iterating through the function's

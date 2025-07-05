@@ -466,7 +466,7 @@ namespace arc
 	public:
 		Opaque(Builder& b, Node* node) : opaque_node(node), builder(b) {}
 
-		Node* node() const
+		[[nodiscard]] Node* node() const
 		{
 			return opaque_node;
 		}
@@ -482,7 +482,7 @@ namespace arc
 	public:
 		Opaque(Builder& b, Node* node) : opaque_node(node), builder(b) {}
 
-		Node* node() const
+		[[nodiscard]] Node* node() const
 		{
 			return opaque_node;
 		}
@@ -516,9 +516,29 @@ namespace arc
 		 * @brief Add a field with primitive type
 		 * @param name Field name
 		 * @param type Field type
+		 * @param type_data Additional type information for complex types; Defaults to an empty TypedData
 		 * @return Reference to this builder for chaining
 		 */
-		StructBuilder& field(std::string_view name, DataType type);
+		StructBuilder& field(std::string_view name, DataType type, const TypedData& type_data = {});
+
+		/**
+		 * @brief Add a pointer field; a convenience method for pointer types
+		 * @param name Field name
+		 * @param pointee_type Type the pointer points to. Can be nullptr for forward refs
+		 * @param addr_space Address space (defaults to 0)
+		 * @return Reference to this builder for chaining
+		 */
+		StructBuilder& field_ptr(std::string_view name, Node* pointee_type = nullptr, std::uint32_t addr_space = 0);
+
+		/**
+		 * @brief Add a self-referential pointer field
+		 * @param name Field name
+		 * @param addr_space Address space
+		 * @return Reference to this builder for chaining
+		 *
+		 * @note: Address space is optional; defaults to 0
+		 */
+		StructBuilder& self_ptr(std::string_view name, std::uint32_t addr_space = 0);
 
 		/**
 		 * @brief Build the struct type
@@ -645,7 +665,7 @@ namespace arc
 		 * @brief Get the entry node for this block
 		 * @return Entry node for control flow targeting
 		 */
-		Node *entry() const
+		[[nodiscard]] Node *entry() const
 		{
 			return region->entry();
 		}

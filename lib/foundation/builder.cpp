@@ -24,11 +24,7 @@ namespace arc
 	Node *Builder::alloc(const TypedData &type_def)
 	{
 		Node* node = create_node(NodeType::ALLOC, type_def.type());
-		if (type_def.type() == DataType::STRUCT)
-			node->value = type_def;
-		else
-			set_t(node->value, type_def.type());
-
+		node->value = type_def;
 		return node;
 	}
 
@@ -37,7 +33,10 @@ namespace arc
 		if (!location)
 			throw std::invalid_argument("load location cannot be null");
 
+		/* if this is a pointer, we need to propagate the pointee type information */
 		Node *node = create_node(NodeType::LOAD, location->type_kind);
+		if (location->type_kind == DataType::POINTER && location->value.type() == DataType::POINTER)
+			node->value = location->value;
 		connect_inputs(node, { location });
 		return node;
 	}
@@ -395,6 +394,8 @@ namespace arc
 		const auto& struct_data = struct_obj->value.get<DataType::STRUCT>();
 		auto field_type = DataType::VOID;
 		std::size_t field_index = 0;
+		TypedData field_type_data = {};
+
 		for (std::size_t i = 0; i < struct_data.fields.size(); ++i)
 		{
 			const auto& [name_id, ftype, fdata] = struct_data.fields[i];
@@ -402,6 +403,7 @@ namespace arc
 			{
 				field_type = ftype;
 				field_index = i;
+				field_type_data = fdata;
 				break;
 			}
 		}
@@ -411,6 +413,7 @@ namespace arc
 
 		Node* field_index_node = lit(static_cast<std::uint32_t>(field_index));
 		Node* node = create_node(NodeType::ACCESS, field_type);
+		node->value = field_type_data;
 		connect_inputs(node, { struct_obj, field_index_node });
 		return node;
 	}
@@ -469,10 +472,34 @@ namespace arc
 	StructBuilder::StructBuilder(Builder& builder, const std::string_view name)
 	: builder(builder), struct_name_id(builder.module.intern_str(name)) {}
 
-	StructBuilder& StructBuilder::field(const std::string_view name, DataType type)
+	StructBuilder& StructBuilder::field(const std::string_view name, DataType type, const TypedData& type_data)
 	{
-		TypedData field_type_data = {}; /* this defaults to VOID, but it should be fine for type descriptors */
-		fields.emplace_back(builder.module.intern_str(name), type, std::move(field_type_data));
+		fields.emplace_back(builder.module.intern_str(name), type, std::move(type_data));
+		return *this;
+	}
+
+	StructBuilder& StructBuilder::field_ptr(const std::string_view name, Node *pointee_type, std::uint32_t addr_space)
+	{
+		/* you typically don't really care what default value actually is as it simply is to declare a definition,
+		 * so we can just use an empty TypedData here */
+		TypedData ptr_type_data = {};
+		DataTraits<DataType::POINTER>::value ptr_data = {};
+		ptr_data.pointee = pointee_type; /* can be nullptr for forward/self refs */
+		ptr_data.addr_space = addr_space;
+		ptr_type_data.set<decltype(ptr_data), DataType::POINTER>(ptr_data);
+		fields.emplace_back(builder.module.intern_str(name), DataType::POINTER, std::move(ptr_type_data));
+		return *this;
+	}
+
+	StructBuilder& StructBuilder::self_ptr(const std::string_view name, const std::uint32_t addr_space)
+	{
+		/* self-referential pointer field. pointee = nullptr for forward reference */
+		TypedData ptr_type_data = {};
+		DataTraits<DataType::POINTER>::value ptr_data = {};
+		ptr_data.pointee = nullptr;
+		ptr_data.addr_space = addr_space;
+		ptr_type_data.set<decltype(ptr_data), DataType::POINTER>(ptr_data);
+		fields.emplace_back(builder.module.intern_str(name), DataType::POINTER, std::move(ptr_type_data));
 		return *this;
 	}
 

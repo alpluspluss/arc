@@ -414,3 +414,268 @@ TEST_F(DumpFixture, RecursiveFunction)
 		});
 	arc::dump(*module);
 }
+
+TEST_F(DumpFixture, BasicStructDump)
+{
+    auto point_type = builder->struct_type("Point")
+        .field("x", arc::DataType::FLOAT32)
+        .field("y", arc::DataType::FLOAT32)
+        .build();
+
+    module->add_t("Point", point_type);
+
+    builder->function<arc::DataType::VOID>("struct_basic")
+        .body([&](arc::Builder &fb)
+        {
+            auto *point = fb.alloc(point_type);
+            auto *x_field = fb.struct_field(point, "x");
+            auto *y_field = fb.struct_field(point, "y");
+
+            auto *x_val = fb.lit(3.14f);
+            auto *y_val = fb.lit(2.71f);
+
+            fb.store(x_val, x_field);
+            fb.store(y_val, y_field);
+
+            return fb.ret();
+        });
+
+    arc::dump(*module);
+    std::cout << "\n";
+}
+
+TEST_F(DumpFixture, SelfReferentialStructDump)
+{
+    auto node_type = builder->struct_type("ListNode")
+        .field("data", arc::DataType::INT32)
+        .self_ptr("next")
+        .build();
+
+    module->add_t("ListNode", node_type);
+
+    builder->function<arc::DataType::VOID>("linked_list")
+        .body([&](arc::Builder &fb)
+        {
+            auto *node1 = fb.alloc(node_type);
+            auto *node2 = fb.alloc(node_type);
+
+            /* set data fields */
+            auto *data1 = fb.struct_field(node1, "data");
+            auto *data2 = fb.struct_field(node2, "data");
+            fb.store(fb.lit(42), data1);
+            fb.store(fb.lit(84), data2);
+
+            /* link nodes */
+            auto *next1 = fb.struct_field(node1, "next");
+            auto *node2_addr = fb.addr_of(node2);
+            fb.ptr_store(node2_addr, next1);
+
+            return fb.ret();
+        });
+
+    arc::dump(*module);
+    std::cout << "\n";
+}
+
+TEST_F(DumpFixture, ComplexRecursiveStructDump)
+{
+    auto tree_type = builder->struct_type("TreeNode")
+        .field("value", arc::DataType::INT32)
+        .self_ptr("left")
+        .self_ptr("right")
+        .self_ptr("parent")
+        .field("depth", arc::DataType::UINT32)
+        .build();
+
+    module->add_t("TreeNode", tree_type);
+
+    builder->function<arc::DataType::VOID>("binary_tree")
+        .body([&](arc::Builder &fb)
+        {
+            auto *root = fb.alloc(tree_type);
+            auto *left_child = fb.alloc(tree_type);
+            auto *right_child = fb.alloc(tree_type);
+
+            /* set values */
+            auto *root_value = fb.struct_field(root, "value");
+            auto *left_value = fb.struct_field(left_child, "value");
+            auto *right_value = fb.struct_field(right_child, "value");
+
+            fb.store(fb.lit(10), root_value);
+            fb.store(fb.lit(5), left_value);
+            fb.store(fb.lit(15), right_value);
+
+            /* link tree structure */
+            auto *root_left = fb.struct_field(root, "left");
+            auto *root_right = fb.struct_field(root, "right");
+            auto *left_parent = fb.struct_field(left_child, "parent");
+            auto *right_parent = fb.struct_field(right_child, "parent");
+
+            fb.ptr_store(fb.addr_of(left_child), root_left);
+            fb.ptr_store(fb.addr_of(right_child), root_right);
+            fb.ptr_store(fb.addr_of(root), left_parent);
+            fb.ptr_store(fb.addr_of(root), right_parent);
+
+            return fb.ret();
+        });
+
+    arc::dump(*module);
+    std::cout << "\n";
+}
+
+TEST_F(DumpFixture, PackedStructDump)
+{
+    auto packed_type = builder->struct_type("PackedData")
+        .field("flag", arc::DataType::BOOL)
+        .field("large_val", arc::DataType::INT64)
+        .field("small_val", arc::DataType::INT8)
+        .packed()
+        .build();
+
+    module->add_t("PackedData", packed_type);
+
+    builder->function<arc::DataType::VOID>("packed_struct")
+        .body([&](arc::Builder &fb)
+        {
+            auto *packed = fb.alloc(packed_type);
+            auto *flag_field = fb.struct_field(packed, "flag");
+            auto *large_field = fb.struct_field(packed, "large_val");
+            auto *small_field = fb.struct_field(packed, "small_val");
+
+            fb.store(fb.lit(true), flag_field);
+            fb.store(fb.lit(static_cast<std::int64_t>(9223372036854775807)), large_field);
+            fb.store(fb.lit(static_cast<std::int8_t>(127)), small_field);
+
+            return fb.ret();
+        });
+
+    arc::dump(*module);
+    std::cout << "\n";
+}
+
+TEST_F(DumpFixture, NestedStructDump)
+{
+    /* define inner struct */
+    auto address_type = builder->struct_type("Address")
+        .field("street_num", arc::DataType::UINT32)
+        .field("zip_code", arc::DataType::UINT32)
+        .build();
+
+    /* define outer struct with nested struct */
+    arc::TypedData address_field_type;
+    address_field_type.set<arc::DataTraits<arc::DataType::STRUCT>::value, arc::DataType::STRUCT>(
+        address_type.get<arc::DataType::STRUCT>());
+
+    auto person_type = builder->struct_type("Person")
+        .field("age", arc::DataType::INT32)
+        .field("address", arc::DataType::STRUCT, address_field_type)
+        .self_ptr("spouse")
+        .build();
+
+    module->add_t("Address", address_type);
+    module->add_t("Person", person_type);
+
+    builder->function<arc::DataType::VOID>("nested_struct")
+        .body([&](arc::Builder &fb)
+        {
+            auto *person = fb.alloc(person_type);
+            auto *age_field = fb.struct_field(person, "age");
+            auto *addr_field = fb.struct_field(person, "address");
+            auto *street_field = fb.struct_field(addr_field, "street_num");
+            auto *zip_field = fb.struct_field(addr_field, "zip_code");
+
+            fb.store(fb.lit(30), age_field);
+            fb.store(fb.lit(static_cast<std::uint32_t>(123)), street_field);
+            fb.store(fb.lit(static_cast<std::uint32_t>(12345)), zip_field);
+
+            return fb.ret();
+        });
+
+    arc::dump(*module);
+    std::cout << "\n";
+}
+
+TEST_F(DumpFixture, StructWithPointersDump)
+{
+	auto *int_alloc = builder->alloc<arc::DataType::INT32>(builder->lit(1));
+
+	auto wrapper_type = builder->struct_type("Wrapper")
+		.field("id", arc::DataType::UINT64)
+		.field_ptr("data_ptr", int_alloc)
+		.field_ptr("nullable_ptr", nullptr)
+		.self_ptr("next", 1)
+		.build();
+
+	module->add_t("Wrapper", wrapper_type);
+
+	builder->function<arc::DataType::VOID>("pointer_struct")
+		.body([&](arc::Builder &fb)
+		{
+			auto *wrapper = fb.alloc(wrapper_type);
+			auto *id_field = fb.struct_field(wrapper, "id");
+			auto *data_ptr_field = fb.struct_field(wrapper, "data_ptr");
+			auto *next_field = fb.struct_field(wrapper, "next");
+
+			fb.store(fb.lit(static_cast<std::uint64_t>(12345)), id_field);
+
+			auto *loaded_ptr = fb.load(data_ptr_field);
+			fb.ptr_load(loaded_ptr);
+
+			auto *next_ptr = fb.load(next_field);
+			auto *wrapper_addr = fb.addr_of(wrapper);
+			fb.ptr_store(wrapper_addr, next_ptr);
+			return fb.ret();
+		});
+
+	arc::dump(*module);
+	std::cout << "\n";
+}
+
+TEST_F(DumpFixture, MultipleStructTypesDump)
+{
+    /* define multiple related struct types */
+    auto node_type = builder->struct_type("Node")
+        .field("id", arc::DataType::UINT32)
+        .self_ptr("next")
+        .build();
+
+    auto list_type = builder->struct_type("List")
+        .field("count", arc::DataType::UINT32)
+        .field_ptr("head", nullptr) /* forward ref to Node */
+        .field_ptr("tail", nullptr) /* forward ref to Node */
+        .build();
+
+    auto manager_type = builder->struct_type("Manager")
+        .field("active_lists", arc::DataType::UINT32)
+        .field_ptr("primary_list", nullptr) /* forward ref to List */
+        .build();
+
+    module->add_t("Node", node_type);
+    module->add_t("List", list_type);
+    module->add_t("Manager", manager_type);
+
+    builder->function<arc::DataType::VOID>("multiple_structs")
+        .body([&](arc::Builder &fb)
+        {
+            auto *manager = fb.alloc(manager_type);
+            auto *list = fb.alloc(list_type);
+            auto *node = fb.alloc(node_type);
+
+            auto *mgr_count = fb.struct_field(manager, "active_lists");
+            auto *mgr_primary = fb.struct_field(manager, "primary_list");
+            auto *list_count = fb.struct_field(list, "count");
+            auto *list_head = fb.struct_field(list, "head");
+            auto *node_id = fb.struct_field(node, "id");
+
+            fb.store(fb.lit(static_cast<std::uint32_t>(1)), mgr_count);
+            fb.ptr_store(fb.addr_of(list), mgr_primary);
+            fb.store(fb.lit(static_cast<std::uint32_t>(1)), list_count);
+            fb.ptr_store(fb.addr_of(node), list_head);
+            fb.store(fb.lit(static_cast<std::uint32_t>(100)), node_id);
+
+            return fb.ret();
+        });
+
+    arc::dump(*module);
+    std::cout << "\n";
+}

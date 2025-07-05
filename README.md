@@ -66,7 +66,8 @@ int main()
     auto builder = arc::Builder(module);
     
     auto main_fn = builder.function("main")
-        .returns<arc::DataType::INT32>();
+        .driver()
+        .returns<arc::DataType::INT32>()
         .body([&](auto& fb)
         {
             auto val1 = fb.lit(42);

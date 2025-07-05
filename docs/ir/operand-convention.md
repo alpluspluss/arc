@@ -117,6 +117,14 @@ ALLOC: [size]    /* how much to allocate */
 ```
 *Rationale: Size determines the allocation*
 
+### Data Structure Access Operations
+
+**Pattern**: `[container, selector] → element`
+```
+ACCESS: [struct_or_array, index]    /* what you're accessing, which element */
+```
+*Rationale: Container is primary data, index/field selector specifies which part*
+
 ## Type Safety Constraints
 
 ### Operand Type Constraints

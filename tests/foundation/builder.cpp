@@ -297,3 +297,218 @@ TEST_F(BuilderFixture, TypeCasts)
 	EXPECT_EQ(float_cast->type_kind, arc::DataType::FLOAT32);
 	EXPECT_EQ(float_cast->inputs[0], int_val);
 }
+
+TEST_F(BuilderFixture, BasicStructBuilder)
+{
+	auto person_def = builder->struct_type("Person")
+		.field("age", arc::DataType::INT32)
+		.field("height", arc::DataType::FLOAT32)
+		.field("active", arc::DataType::BOOL)
+		.build();
+
+	EXPECT_EQ(person_def.type(), arc::DataType::STRUCT);
+
+	auto& struct_data = person_def.get<arc::DataType::STRUCT>();
+	EXPECT_EQ(struct_data.alignment, 8);
+	EXPECT_GE(struct_data.fields.size(), 3); /* note: may be more due to padding */
+
+	bool found_age = false;
+	for (const auto& [name_id, type, type_data] : struct_data.fields)
+	{
+		if (module->strtable().get(name_id) == "age")
+		{
+			EXPECT_EQ(type, arc::DataType::INT32);
+			found_age = true;
+			break;
+		}
+	}
+	EXPECT_TRUE(found_age);
+}
+
+TEST_F(BuilderFixture, PackedStructBuilder)
+{
+	auto packed_def = builder->struct_type("PackedStruct")
+		.field("byte_val", arc::DataType::INT8)
+		.field("int_val", arc::DataType::INT32)
+		.field("byte_val2", arc::DataType::INT8)
+		.packed()
+		.build();
+
+	auto& struct_data = packed_def.get<arc::DataType::STRUCT>();
+	EXPECT_EQ(struct_data.alignment, 1); /* packed alignment */
+
+	std::size_t actual_fields = 0;
+	for (const auto& [name_id, type, type_data] : struct_data.fields)
+	{
+		auto field_name = module->strtable().get(name_id);
+		if (!field_name.starts_with("__pad"))
+			actual_fields++;
+	}
+	EXPECT_EQ(actual_fields, 3);
+}
+
+TEST_F(BuilderFixture, SelfReferentialPointer)
+{
+    auto node_def = builder->struct_type("ListNode")
+        .field("data", arc::DataType::INT32)
+        .self_ptr("next")
+        .build();
+
+    EXPECT_EQ(node_def.type(), arc::DataType::STRUCT);
+
+    auto& struct_data = node_def.get<arc::DataType::STRUCT>();
+
+    /* find the next field */
+    bool found_next = false;
+    for (const auto& [name_id, type, type_data] : struct_data.fields)
+    {
+        if (module->strtable().get(name_id) == "next")
+        {
+            EXPECT_EQ(type, arc::DataType::POINTER);
+            EXPECT_EQ(type_data.type(), arc::DataType::POINTER);
+
+            auto& ptr_data = type_data.get<arc::DataType::POINTER>();
+            EXPECT_EQ(ptr_data.pointee, nullptr); /* forward reference */
+            EXPECT_EQ(ptr_data.addr_space, 0);
+            found_next = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found_next);
+}
+
+TEST_F(BuilderFixture, ComplexSelfReferentialStruct)
+{
+    auto tree_def = builder->struct_type("TreeNode")
+        .field("value", arc::DataType::INT32)
+        .self_ptr("left")
+        .self_ptr("right")
+        .self_ptr("parent")
+        .field("depth", arc::DataType::UINT32)
+        .build();
+
+    auto& struct_data = tree_def.get<arc::DataType::STRUCT>();
+
+    /* count self-referential pointers */
+    std::size_t pointer_fields = 0;
+    for (const auto& [name_id, type, type_data] : struct_data.fields)
+    {
+	    if (auto field_name = module->strtable().get(name_id);
+		    type == arc::DataType::POINTER && !field_name.starts_with("__pad"))
+        {
+            pointer_fields++;
+            auto& ptr_data = type_data.get<arc::DataType::POINTER>();
+            EXPECT_EQ(ptr_data.pointee, nullptr);
+        }
+    }
+    EXPECT_EQ(pointer_fields, 3); /* left, right, parent */
+}
+
+TEST_F(BuilderFixture, StructWithComplexTypes)
+{
+    arc::TypedData custom_ptr = {};
+    arc::DataTraits<arc::DataType::POINTER>::value ptr_data = {};
+    ptr_data.pointee = nullptr; /* forward reference to some other type */
+    ptr_data.addr_space = 1; /* custom address space */
+    custom_ptr.set<decltype(ptr_data), arc::DataType::POINTER>(ptr_data);
+
+    auto complex_def = builder->struct_type("ComplexStruct")
+        .field("id", arc::DataType::UINT64)
+        .field("custom_ptr", arc::DataType::POINTER, custom_ptr)
+        .self_ptr("next", 2) /* custom address space */
+        .build();
+
+    auto& struct_data = complex_def.get<arc::DataType::STRUCT>();
+
+    /* verify custom pointer field */
+    bool found_custom = false;
+    bool found_next = false;
+
+    for (const auto& [name_id, type, type_data] : struct_data.fields)
+    {
+        auto field_name = module->strtable().get(name_id);
+        if (field_name == "custom_ptr")
+        {
+            EXPECT_EQ(type, arc::DataType::POINTER);
+            auto& ptr = type_data.get<arc::DataType::POINTER>();
+            EXPECT_EQ(ptr.addr_space, 1);
+            found_custom = true;
+        }
+        else if (field_name == "next")
+        {
+            EXPECT_EQ(type, arc::DataType::POINTER);
+            auto& ptr = type_data.get<arc::DataType::POINTER>();
+            EXPECT_EQ(ptr.addr_space, 2);
+            found_next = true;
+        }
+    }
+    EXPECT_TRUE(found_custom);
+    EXPECT_TRUE(found_next);
+}
+
+TEST_F(BuilderFixture, StructAllocationAndAccess)
+{
+    /* define struct type */
+    auto point_def = builder->struct_type("Point")
+        .field("x", arc::DataType::FLOAT32)
+        .field("y", arc::DataType::FLOAT32)
+        .build();
+
+    /* allocate struct instance */
+    auto* struct_alloc = builder->alloc(point_def);
+    EXPECT_EQ(struct_alloc->ir_type, arc::NodeType::ALLOC);
+    EXPECT_EQ(struct_alloc->type_kind, arc::DataType::STRUCT);
+
+    /* access struct fields */
+    auto* x_field = builder->struct_field(struct_alloc, "x");
+    EXPECT_EQ(x_field->ir_type, arc::NodeType::ACCESS);
+    EXPECT_EQ(x_field->type_kind, arc::DataType::FLOAT32);
+
+    auto* y_field = builder->struct_field(struct_alloc, "y");
+    EXPECT_EQ(y_field->ir_type, arc::NodeType::ACCESS);
+    EXPECT_EQ(y_field->type_kind, arc::DataType::FLOAT32);
+}
+
+TEST_F(BuilderFixture, StructFieldPointer)
+{
+    /* create a simple int allocation to use as pointee */
+    auto* int_alloc = builder->alloc<arc::DataType::INT32>(builder->lit(1));
+
+    auto wrapper_def = builder->struct_type("Wrapper")
+        .field("id", arc::DataType::UINT32)
+        .field_ptr("data_ptr", int_alloc)
+        .build();
+
+    auto& struct_data = wrapper_def.get<arc::DataType::STRUCT>();
+
+    /* find the pointer field */
+    bool found_ptr = false;
+    for (const auto& [name_id, type, type_data] : struct_data.fields)
+    {
+        if (module->strtable().get(name_id) == "data_ptr")
+        {
+            EXPECT_EQ(type, arc::DataType::POINTER);
+            auto& ptr_data = type_data.get<arc::DataType::POINTER>();
+            EXPECT_EQ(ptr_data.pointee, int_alloc);
+            EXPECT_EQ(ptr_data.addr_space, 0);
+            found_ptr = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found_ptr);
+}
+
+TEST_F(BuilderFixture, StructFieldErrors)
+{
+    auto simple_def = builder->struct_type("Simple")
+        .field("value", arc::DataType::INT32)
+        .build();
+
+    auto* struct_alloc = builder->alloc(simple_def);
+
+    EXPECT_THROW(builder->struct_field(struct_alloc, "nonexistent"), std::invalid_argument);
+    EXPECT_THROW(builder->struct_field(nullptr, "value"), std::invalid_argument);
+
+    auto* int_alloc = builder->alloc<arc::DataType::INT32>(builder->lit(1));
+    EXPECT_THROW(builder->struct_field(int_alloc, "value"), std::invalid_argument);
+}
