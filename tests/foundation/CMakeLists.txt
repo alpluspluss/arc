@@ -15,6 +15,11 @@ arc_test(node-test
         LIBS Arc::Arc
 )
 
+arc_test(pm-test
+        SOURCES pass-manager.cpp
+        LIBS Arc::Arc
+)
+
 arc_test(region-test
         SOURCES region.cpp
         LIBS Arc::Arc

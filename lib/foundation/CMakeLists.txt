@@ -3,6 +3,7 @@
 arc_library(Foundation SOURCES
         builder.cpp
         module.cpp
+        pass-manager.cpp
         region.cpp
         typed-data.cpp
 )
