@@ -53,11 +53,7 @@ public:
 	arc::Analysis *run(const arc::Module &) override
 	{
 		PassManagerFixture::execution_order.push_back(name());
-
-		ach::allocator<MockAnalysisResult> alloc;
-		auto *result = alloc.allocate(1);
-		std::construct_at(result);
-		return result;
+		return allocate_result<MockAnalysisResult>();
 	}
 };
 
@@ -88,11 +84,7 @@ public:
 	arc::Analysis *run(const arc::Module &) override
 	{
 		PassManagerFixture::execution_order.push_back(name());
-
-		ach::allocator<DependentAnalysisResult> alloc;
-		auto *result = alloc.allocate(1);
-		std::construct_at(result);
-		return result;
+		return allocate_result<DependentAnalysisResult>();
 	}
 };
 

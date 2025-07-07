@@ -65,7 +65,7 @@ namespace arc
 		 * @param policy Execution policy for the PassManager
 		 * @return PassManager configured with dependency-aware execution
 		 */
-		PassManager build(ExecutionPolicy policy = ExecutionPolicy::SEQUENTIAL);
+		PassManager build(ExecutionPolicy policy = ExecutionPolicy::PARALLEL);
 
 		/**
 		 * @brief Get the number of registered passes

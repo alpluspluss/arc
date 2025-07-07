@@ -74,6 +74,47 @@ namespace arc
 		 * @return Raw pointer to analysis result
 		 */
 		virtual Analysis *run(const Module &module) = 0;
+		
+	protected:
+		/**
+		 * @brief Allocate an analysis result with appropriate allocation policy
+		 * @tparam T Analysis result type (must derive from Analysis)
+		 * @tparam Args Constructor argument types
+		 * @param policy Allocation policy to use
+		 * @param args Arguments to pass to the analysis result constructor
+		 * @return Pointer to newly allocated and constructed analysis result
+		 */
+		template<typename T, typename... Args>
+			requires std::derived_from<T, Analysis>
+		T* allocate_result(ach::AllocationPolicy policy, Args&&... args)
+		{
+			if (policy == ach::AllocationPolicy::SHARED)
+			{
+				ach::shared_allocator<T> alloc;
+				T* result = alloc.allocate(1);
+				std::construct_at(result, std::forward<Args>(args)...);
+				return result;
+			}
+			
+			ach::local_allocator<T> alloc;
+			T* result = alloc.allocate(1);
+			std::construct_at(result, std::forward<Args>(args)...);
+			return result;
+		}
+
+		/**
+		 * @brief Allocate an analysis result with shared allocation policy (default for thread safety)
+		 * @tparam T Analysis result type (must derive from Analysis)
+		 * @tparam Args Constructor argument types
+		 * @param args Arguments to pass to the analysis result constructor
+		 * @return Pointer to newly allocated and constructed analysis result
+		 */
+		template<typename T, typename... Args>
+			requires std::derived_from<T, Analysis>
+		T* allocate_result(Args&&... args)
+		{
+			return allocate_result<T>(ach::AllocationPolicy::SHARED, std::forward<Args>(args)...);
+		}
 	};
 
 	/**

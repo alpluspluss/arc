@@ -7,6 +7,9 @@ namespace arc
 {
 	Module::Module(std::string_view name)
 	{
+		/* note: the allocator share the same thread local storage
+		 * the point of declaring both is specifically for semantics */
+		ach::allocator<Region> region_alloc;
 		auto* root_mem = region_alloc.allocate(1);
 		root_region = std::construct_at(root_mem, ".__global", *this, nullptr);
 		regions.push_back(root_region);
@@ -34,6 +37,7 @@ namespace arc
 		if (!parent)
 			parent = root_region;
 
+		ach::allocator<Region> region_alloc;
 		auto* mem = region_alloc.allocate(1);
 		auto* region = std::construct_at(mem, name, *this, parent);
 		regions.push_back(region);

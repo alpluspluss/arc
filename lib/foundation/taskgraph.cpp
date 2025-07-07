@@ -26,7 +26,7 @@ namespace arc
 		nodes.push_back(node);
 	}
 
-	PassManager TaskGraph::build(ExecutionPolicy policy)
+	PassManager TaskGraph::build(const ExecutionPolicy policy)
 	{
 		return PassManager(std::move(*this), policy);
 	}

@@ -396,7 +396,7 @@ namespace arc
 		std::size_t field_index = 0;
 		TypedData field_type_data = {};
 
-		for (std::size_t i = 0; i < struct_data.fields.size(); ++i)
+		for (std::uint8_t i = 0; i < struct_data.fields.size(); ++i)
 		{
 			const auto& [name_id, ftype, fdata] = struct_data.fields[i];
 			if (module.strtable().get(name_id) == field_name)
