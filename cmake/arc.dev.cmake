@@ -5,11 +5,11 @@
 #
 
 # dev build options
-option(ARC_ENABLE_SANITIZERS "Enable sanitizers in debug builds" ON)
+option(ARC_ENABLE_SANITIZERS "Enable sanitizers in debug builds" OFF)
 option(ARC_STRICT_WARNINGS "Treat warnings as errors" OFF)
-option(ARC_ENABLE_TSAN "Enable ThreadSanitizer" OFF)
+option(ARC_ENABLE_TSAN "Enable ThreadSanitizer" ON)
 option(ARC_ENABLE_MSAN "Enable MemorySanitizer" OFF)
-option(ARC_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
+option(ARC_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" ON)
 option(ARC_ENABLE_ASAN "Enable AddressSanitizer" OFF)
 
 # @brief: apply dev configurations

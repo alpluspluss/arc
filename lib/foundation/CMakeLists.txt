@@ -5,6 +5,7 @@ arc_library(Foundation SOURCES
         module.cpp
         pass-manager.cpp
         region.cpp
+        taskgraph.cpp
         typed-data.cpp
 )
 

@@ -21,10 +21,9 @@ namespace arc
 
 		/**
 		 * @brief Update analysis results incrementally for modified regions
-		 * @param modified_regions Regions that were changed by a transform
 		 * @return true if incremental update succeeded, false if full recomputation needed
 		 */
-		virtual bool update(const std::vector<Region *> &modified_regions)
+		virtual bool update(const std::vector<Region *>&)
 		{
 			return false;
 		}
