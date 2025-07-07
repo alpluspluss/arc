@@ -3,10 +3,9 @@
 #pragma once
 
 #include <string_view>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 #include <arc/foundation/node.hpp>
-#include <arc/support/allocator.hpp>
 
 namespace arc
 {
@@ -138,8 +137,5 @@ namespace arc
 		Region* rodata_region; /* read-only section */
 		StringTable strtb;
 		StringTable::StringId mod_id;
-		/* note: the allocator share the same thread local storage
-		 * the point of declaring both is specifically for semantics */
-		ach::allocator<Region> region_alloc;
 	};
 }

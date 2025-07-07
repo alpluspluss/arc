@@ -4,12 +4,12 @@
 * by Al (@alpluspluss) */
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <memory>
 #include <new>
-#include <type_traits>
+#include <thread>
 #if defined(__unix__) || defined(__unix) || (defined(__APPLE__) && defined(__MACH__))
 /* we compile for Unix e.g. Linux, macOS and so on */
 #include <sys/mman.h>
@@ -22,14 +22,24 @@
 namespace ach
 {
 	/**
+	 * @brief Allocation policy for the allocator
+	 */
+	enum class AllocationPolicy
+	{
+		THREAD_LOCAL, /* fast thread-local allocation; also the default */
+		SHARED        /* thread-safe shared allocation */
+	};
+
+	/**
 	 * @brief Memory allocator with pool-based allocation strategy
 	 *
 	 * @note This allocator implements the C++ standard allocator interface while providing
 	 *  optimized memory allocation through size-based pools for small allocations and
 	 *  direct mmap for larger ones.
 	 * @tparam T Type of objects to allocate
+	 * @tparam Policy Allocation policy. Default to `AllocationPolicy::THREAD_LOCAL` for fast
 	 */
-	template<typename T>
+	template<typename T, AllocationPolicy Policy = AllocationPolicy::THREAD_LOCAL>
 	class allocator
 	{
 	public:
@@ -49,7 +59,7 @@ namespace ach
 		template<typename U>
 		struct rebind
 		{
-			using other = allocator<U>;
+			using other = allocator<U, Policy>;
 		};
 
 		/**
@@ -66,7 +76,7 @@ namespace ach
 		 * @brief Converting constructor
 		 */
 		template<typename U>
-		constexpr allocator(const allocator<U> &) noexcept {}
+		constexpr allocator(const allocator<U, Policy> &) noexcept {}
 
 		/**
 		 * @brief Allocate memory for n objects of type T
@@ -77,7 +87,7 @@ namespace ach
 				return nullptr;
 
 			const size_type bytes_needed = n * sizeof(T);
-			void* result = nullptr;
+			void *result = nullptr;
 
 			if (bytes_needed >= LARGE_THRESHOLD)
 				result = allocate_large(bytes_needed);
@@ -98,8 +108,6 @@ namespace ach
 			if (!p)
 				return;
 
-			auto& state = get_global_state();
-
 			if (!BlockHeader::is_aligned(p))
 				return;
 
@@ -114,7 +122,11 @@ namespace ach
 			{
 				const std::size_t total_size = header->size() + sizeof(BlockHeader);
 				const std::size_t aligned_size = (total_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+#if defined(__unix__) || defined(__unix) || (defined(__APPLE__) && defined(__MACH__))
 				munmap(header, aligned_size);
+#elif defined(_WIN32) || defined(_WIN64)
+				VirtualFree(header, 0, MEM_RELEASE);
+#endif
 				return;
 			}
 
@@ -123,8 +135,26 @@ namespace ach
 				return;
 
 			header->set_free(true);
-			header->next = state.free_lists[size_class];
-			state.free_lists[size_class] = header;
+
+			if constexpr (Policy == AllocationPolicy::THREAD_LOCAL)
+			{
+				/* we assume fully thread-safe access for thread local allocations */
+				auto &state = tl_state();
+				header->next = state.free_lists[size_class];
+				state.free_lists[size_class] = header;
+			}
+			else
+			{
+				auto &state = shared_state();
+				typename SharedState::AtomicHeaderPtr expected =
+						state.free_lists[size_class].load(std::memory_order_acquire);
+				do
+				{
+					header->next = expected;
+				}
+				while (!state.free_lists[size_class].compare_exchange_weak(
+					expected, header, std::memory_order_release, std::memory_order_acquire));
+			}
 		}
 
 		/**
@@ -158,12 +188,12 @@ namespace ach
 		static constexpr std::size_t ALIGNMENT = alignof(T);
 		static constexpr std::size_t LARGE_THRESHOLD = 1024 * 1024;
 		static constexpr std::size_t SIZE_CLASSES = 32;
-		static constexpr auto HEADER_MAGIC = 0xDEADBEEF12345678;
 		static constexpr std::uint64_t SIZE_MASK = 0x0000FFFFFFFFFFFF;
 		static constexpr std::uint64_t CLASS_MASK = 0x00FF000000000000;
-		static constexpr auto MAGIC_VALUE = 0xA000000000000000;
 		static constexpr std::uint64_t FREE_FLAG = 1ULL << 63;
 		static constexpr std::uint64_t MMAP_FLAG = 1ULL << 62;
+		static constexpr auto HEADER_MAGIC = 0xDEADBEEF12345678;
+		static constexpr auto MAGIC_VALUE = 0xA000000000000000;
 
 		class BlockHeader
 		{
@@ -187,10 +217,25 @@ namespace ach
 				return (magic == HEADER_MAGIC) && (size() <= (1ULL << 47));
 			}
 
-			[[nodiscard]] bool is_free() const { return (data & FREE_FLAG) != 0; }
-			[[nodiscard]] bool is_mmap() const { return (data & MMAP_FLAG) != 0; }
-			[[nodiscard]] size_t size() const { return data & SIZE_MASK; }
-			[[nodiscard]] uint8_t size_class() const { return (data & CLASS_MASK) >> 48; }
+			[[nodiscard]] bool is_free() const
+			{
+				return (data & FREE_FLAG) != 0;
+			}
+
+			[[nodiscard]] bool is_mmap() const
+			{
+				return (data & MMAP_FLAG) != 0;
+			}
+
+			[[nodiscard]] size_t size() const
+			{
+				return data & SIZE_MASK;
+			}
+
+			[[nodiscard]] uint8_t size_class() const
+			{
+				return (data & CLASS_MASK) >> 48;
+			}
 
 			void set_free(const bool is_free)
 			{
@@ -229,26 +274,19 @@ namespace ach
 			Pool *next;
 			std::uint8_t *memory;
 
-			explicit Pool(std::uint8_t* mem, const size_t size)
-				: cap(size), free_list(nullptr), next(nullptr), memory(mem)
-			{
-				/* memory is passed in from `allocator::allocate_pool`
-				 * pool itself is just a struct with metadata
-				 * that points to its slice of the big mmap'd region */
-			}
+			explicit Pool(std::uint8_t *mem, const size_t size) : cap(size), free_list(nullptr), next(nullptr),
+			                                                      memory(mem) {}
 
-			/* note: the cleanup is delegated to the global state whose
-			 *	cleanup is when the thread lifetime ends */
 			~Pool() = default;
 		};
 
-		struct GlobalAllocatorState
+		struct ThreadLocalState
 		{
 			SizeClass size_classes[SIZE_CLASSES];
 			BlockHeader *free_lists[SIZE_CLASSES];
 			Pool *pools[SIZE_CLASSES];
 
-			GlobalAllocatorState()
+			ThreadLocalState()
 			{
 				for (std::size_t i = 0; i < SIZE_CLASSES; ++i)
 				{
@@ -261,30 +299,30 @@ namespace ach
 					size_classes[i].size = static_cast<std::uint16_t>(size);
 					size_classes[i].slot = static_cast<std::uint16_t>(slot_size);
 					size_classes[i].blocks = PAGE_SIZE / slot_size;
+				}
 
+				for (std::size_t i = 0; i < SIZE_CLASSES; ++i)
+				{
 					free_lists[i] = nullptr;
 					pools[i] = nullptr;
 				}
 			}
 
-			~GlobalAllocatorState()
+			~ThreadLocalState()
 			{
-				for (auto pool : pools)
+				for (auto pool: pools)
 				{
 					while (pool)
 					{
 						Pool *next = pool->next;
 						std::destroy_at(pool);
 
-						/* reconstruct the original mmap pointer; pool->memory points
-						 * to the data region so we need to subtract the size of the
-						 * Pool metadata to get back to the start of the mmap'd region */
 						constexpr auto pool_size = sizeof(Pool);
 						constexpr auto pool_align = alignof(Pool);
 						const std::size_t aligned_pool_size = (pool_size + pool_align - 1) & ~(pool_align - 1);
 						const std::size_t total_size = PAGE_SIZE + aligned_pool_size;
 
-						void *original_mem = reinterpret_cast<void*>(
+						void *original_mem = reinterpret_cast<void *>(
 							reinterpret_cast<std::uintptr_t>(pool->memory) - aligned_pool_size
 						);
 
@@ -293,16 +331,81 @@ namespace ach
 #elif defined(_WIN32) || defined(_WIN64)
 						VirtualFree(original_mem, 0, MEM_RELEASE);
 #endif
-
 						pool = next;
 					}
 				}
 			}
 		};
 
-		static GlobalAllocatorState &get_global_state()
+		struct SharedState
 		{
-			static thread_local GlobalAllocatorState state;
+			SizeClass size_classes[SIZE_CLASSES];
+			std::atomic<BlockHeader *> free_lists[SIZE_CLASSES];
+			std::atomic<Pool *> pools[SIZE_CLASSES];
+			std::atomic<bool> pool_allocation_in_progress[SIZE_CLASSES];
+
+			SharedState()
+			{
+				for (std::size_t i = 0; i < SIZE_CLASSES; ++i)
+				{
+					const std::size_t size = 1ULL << (i + 3);
+					const std::size_t alignment = (size > ALIGNMENT) ? size : ALIGNMENT;
+					constexpr auto header_size = sizeof(BlockHeader);
+					const std::size_t padding = (alignment - (header_size % alignment)) % alignment;
+					const std::size_t slot_size = (size + header_size + padding + alignment - 1) & ~(alignment - 1);
+
+					size_classes[i].size = static_cast<std::uint16_t>(size);
+					size_classes[i].slot = static_cast<std::uint16_t>(slot_size);
+					size_classes[i].blocks = PAGE_SIZE / slot_size;
+				}
+
+				for (std::size_t i = 0; i < SIZE_CLASSES; ++i)
+				{
+					free_lists[i].store(nullptr, std::memory_order_relaxed);
+					pools[i].store(nullptr, std::memory_order_relaxed);
+					pool_allocation_in_progress[i].store(false, std::memory_order_relaxed);
+				}
+			}
+
+			~SharedState()
+			{
+				for (std::size_t i = 0; i < SIZE_CLASSES; ++i)
+				{
+					Pool *pool = pools[i].load(std::memory_order_acquire);
+					while (pool)
+					{
+						Pool *next_pool = pool->next;
+						std::destroy_at(pool);
+
+						constexpr auto pool_size = sizeof(Pool);
+						constexpr auto pool_align = alignof(Pool);
+						const std::size_t aligned_pool_size = (pool_size + pool_align - 1) & ~(pool_align - 1);
+						const std::size_t total_size = PAGE_SIZE + aligned_pool_size;
+
+						void *original_mem = reinterpret_cast<void *>(
+							reinterpret_cast<std::uintptr_t>(pool->memory) - aligned_pool_size
+						);
+
+#if defined(__unix__) || defined(__unix) || (defined(__APPLE__) && defined(__MACH__))
+						munmap(original_mem, total_size);
+#elif defined(_WIN32) || defined(_WIN64)
+						VirtualFree(original_mem, 0, MEM_RELEASE);
+#endif
+						pool = next_pool;
+					}
+				}
+			}
+		};
+
+		static ThreadLocalState &tl_state()
+		{
+			thread_local ThreadLocalState state;
+			return state;
+		}
+
+		static SharedState &shared_state()
+		{
+			static SharedState state;
 			return state;
 		}
 
@@ -311,7 +414,7 @@ namespace ach
 			if (size <= 64)
 				return static_cast<std::uint8_t>((size - 1) >> 3);
 
-			size_t n = size - 1;
+			std::size_t n = size - 1;
 			n |= n >> 1;
 			n |= n >> 2;
 			n |= n >> 4;
@@ -326,14 +429,9 @@ namespace ach
 			return class_index;
 		}
 
-		static void allocate_pool(std::uint8_t size_class)
+		static void allocate_pool_thread_local(std::uint8_t size_class)
 		{
-			auto& state = get_global_state();
-
-			/* memory layout: [padding][pool][page-sized data region]
-			 * `mmap` only guarantees page-aligned memory so we manually
-			 * align the Pool structure to meet its alignment requirements
-			 * before constructing it in order to avoid undefined behavior */
+			auto &state = tl_state();
 			constexpr auto pool_size = sizeof(Pool);
 			constexpr auto pool_align = alignof(Pool);
 			const std::size_t aligned_pool_size = (pool_size + pool_align - 1) & ~(pool_align - 1);
@@ -341,7 +439,7 @@ namespace ach
 
 #if defined(__unix__) || defined(__unix) || (defined(__APPLE__) && defined(__MACH__))
 			void *mem = mmap(nullptr, total_size, PROT_READ | PROT_WRITE,
-							 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+			                 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 			if (mem == MAP_FAILED)
 				throw std::bad_alloc();
 #elif defined(_WIN32) || defined(_WIN64)
@@ -354,9 +452,9 @@ namespace ach
 			auto aligned_ptr = reinterpret_cast<std::uintptr_t>(mem);
 			aligned_ptr = (aligned_ptr + pool_align - 1) & ~(pool_align - 1);
 
-			Pool *new_pool = std::construct_at(reinterpret_cast<Pool*>(aligned_ptr),
-								   static_cast<std::uint8_t*>(mem) + aligned_pool_size,
-								   PAGE_SIZE);
+			Pool *new_pool = std::construct_at(reinterpret_cast<Pool *>(aligned_ptr),
+			                                   static_cast<std::uint8_t *>(mem) + aligned_pool_size,
+			                                   PAGE_SIZE);
 			new_pool->next = state.pools[size_class];
 			state.pools[size_class] = new_pool;
 
@@ -373,19 +471,150 @@ namespace ach
 			}
 		}
 
+		static void allocate_pool_shared(std::uint8_t size_class)
+		{
+			auto &state = shared_state();
+			if (auto expected = false;
+				!state.pool_allocation_in_progress[size_class].compare_exchange_strong(
+				expected, true, std::memory_order_acquire))
+			{
+				/* another thread is allocating, spin until done */
+				while (state.pool_allocation_in_progress[size_class].load(std::memory_order_acquire))
+				{
+					std::this_thread::yield();
+				}
+				return;
+			}
+
+			/* double-check that we still need a pool */
+			if (state.free_lists[size_class].load(std::memory_order_acquire) != nullptr)
+			{
+				state.pool_allocation_in_progress[size_class].store(false, std::memory_order_release);
+				return;
+			}
+
+			/* allocate a new pool */
+			constexpr auto pool_size = sizeof(Pool);
+			constexpr auto pool_align = alignof(Pool);
+			const std::size_t aligned_pool_size = (pool_size + pool_align - 1) & ~(pool_align - 1);
+			const std::size_t total_size = PAGE_SIZE + aligned_pool_size;
+
+#if defined(__unix__) || defined(__unix) || (defined(__APPLE__) && defined(__MACH__))
+			void *mem = mmap(nullptr, total_size, PROT_READ | PROT_WRITE,
+			                 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+			if (mem == MAP_FAILED)
+			{
+				state.pool_allocation_in_progress[size_class].store(false, std::memory_order_release);
+				throw std::bad_alloc();
+			}
+#elif defined(_WIN32) || defined(_WIN64)
+			void *mem = VirtualAlloc(nullptr, total_size,
+									MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+			if (!mem)
+			{
+				state.pool_allocation_in_progress[size_class].store(false, std::memory_order_release);
+				throw std::bad_alloc();
+			}
+#endif
+
+			auto aligned_ptr = reinterpret_cast<std::uintptr_t>(mem);
+			aligned_ptr = (aligned_ptr + pool_align - 1) & ~(pool_align - 1);
+
+			Pool *new_pool = std::construct_at(reinterpret_cast<Pool *>(aligned_ptr),
+			                                   static_cast<std::uint8_t *>(mem) + aligned_pool_size,
+			                                   PAGE_SIZE);
+
+			/* lock-free prepend to pool list */
+			Pool *expected_pool = state.pools[size_class].load(std::memory_order_acquire);
+			do
+			{
+				new_pool->next = expected_pool;
+			}
+			while (!state.pools[size_class].compare_exchange_weak(
+				expected_pool, new_pool, std::memory_order_release, std::memory_order_acquire));
+
+			const SizeClass &sc = state.size_classes[size_class];
+			const std::size_t block_size = sc.slot;
+			const std::size_t num_blocks = sc.blocks;
+
+			/* build free list and atomically add to global list */
+			BlockHeader *first_header = nullptr;
+			BlockHeader *prev_header = nullptr;
+			for (std::size_t i = 0; i < num_blocks; ++i)
+			{
+				auto *header = reinterpret_cast<BlockHeader *>(new_pool->memory + i * block_size);
+				header->init(sc.size, size_class, true);
+
+				if (prev_header)
+					prev_header->next = header;
+				else
+					first_header = header;
+
+				prev_header = header;
+			}
+
+			if (prev_header && first_header)
+			{
+				BlockHeader* expected_free =
+						state.free_lists[size_class].load(std::memory_order_acquire);
+				do
+				{
+					prev_header->next = expected_free;
+				}
+				while (!state.free_lists[size_class].compare_exchange_weak(
+					expected_free, first_header, std::memory_order_release, std::memory_order_acquire));
+			}
+
+			state.pool_allocation_in_progress[size_class].store(false, std::memory_order_release);
+		}
+
 		static void *allocate_from_size_class(uint8_t size_class)
 		{
-			auto& state = get_global_state();
-
-			if (!state.free_lists[size_class])
-				allocate_pool(size_class);
-
-			if (state.free_lists[size_class])
+			if constexpr (Policy == AllocationPolicy::THREAD_LOCAL)
 			{
-				BlockHeader *header = state.free_lists[size_class];
-				state.free_lists[size_class] = header->next;
-				header->set_free(false);
-				return reinterpret_cast<char *>(header) + sizeof(BlockHeader);
+				auto &state = tl_state();
+				if (!state.free_lists[size_class])
+					allocate_pool_thread_local(size_class);
+
+				if (state.free_lists[size_class])
+				{
+					BlockHeader *header = state.free_lists[size_class];
+					state.free_lists[size_class] = header->next;
+					header->set_free(false);
+					return reinterpret_cast<char *>(header) + sizeof(BlockHeader);
+				}
+			}
+			else
+			{
+				auto &state = shared_state();
+				BlockHeader* header =
+						state.free_lists[size_class].load(std::memory_order_acquire);
+				while (header)
+				{
+					BlockHeader *next = header->next;
+					if (state.free_lists[size_class].compare_exchange_weak(
+						header, next, std::memory_order_release, std::memory_order_acquire))
+					{
+						header->set_free(false);
+						return reinterpret_cast<char *>(header) + sizeof(BlockHeader);
+					}
+					/* RETRY: CAS fails */
+				}
+
+				/* no free blocks, allocate new pool and retry */
+				allocate_pool_shared(size_class);
+
+				header = state.free_lists[size_class].load(std::memory_order_acquire);
+				while (header)
+				{
+					BlockHeader *next = header->next;
+					if (state.free_lists[size_class].compare_exchange_weak(
+						header, next, std::memory_order_release, std::memory_order_acquire))
+					{
+						header->set_free(false);
+						return reinterpret_cast<char *>(header) + sizeof(BlockHeader);
+					}
+				}
 			}
 
 			return nullptr;
@@ -419,14 +648,21 @@ namespace ach
 		}
 	};
 
-	template<typename T1, typename T2>
-	bool operator==(const allocator<T1> &, const allocator<T2> &) noexcept
+	/* convenience aliases for common use cases */
+	template<typename T>
+	using shared_allocator = allocator<T, AllocationPolicy::SHARED>;
+
+	template<typename T>
+	using local_allocator = allocator<T>; /* already defaults to AllocationPolicy::THREAD_LOCAL */
+
+	template<typename T1, typename T2, AllocationPolicy P1, AllocationPolicy P2>
+	bool operator==(const allocator<T1, P1> &, const allocator<T2, P2> &) noexcept
 	{
-		return true;
+		return std::is_same_v<T1, T2> && P1 == P2;
 	}
 
-	template<typename T1, typename T2>
-	bool operator!=(const allocator<T1> &lhs, const allocator<T2> &rhs) noexcept
+	template<typename T1, typename T2, AllocationPolicy P1, AllocationPolicy P2>
+	bool operator!=(const allocator<T1, P1> &lhs, const allocator<T2, P2> &rhs) noexcept
 	{
 		return !(lhs == rhs);
 	}
