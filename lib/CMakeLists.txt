@@ -2,6 +2,7 @@
 
 add_subdirectory(foundation)
 add_subdirectory(support)
+add_subdirectory(transform)
 
 # the main Arc library target that includes all components
 # and the alias of the main target export name
@@ -11,6 +12,7 @@ add_library(Arc::Arc ALIAS arc)
 target_link_libraries(arc INTERFACE
         Arc::Foundation
         Arc::Support
+        Arc::Transform
 )
 
 if(ARC_INSTALL)
