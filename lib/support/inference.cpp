@@ -210,4 +210,34 @@ namespace arc
 				throw std::invalid_argument("Unknown DataType");
 		}
 	}
+
+	bool has_pointer_qualifier(Node* pointer, DataTraits<DataType::POINTER>::PtrQualifier qual)
+	{
+		if (!pointer || pointer->type_kind != DataType::POINTER ||
+			pointer->value.type() != DataType::POINTER)
+			return false;
+
+		const auto& ptr_data = pointer->value.get<DataType::POINTER>();
+		return (ptr_data.qualifier & qual) != DataTraits<DataType::POINTER>::PtrQualifier::NONE;
+	}
+
+	bool is_const_pointer(Node* pointer)
+	{
+		return has_pointer_qualifier(pointer, DataTraits<DataType::POINTER>::PtrQualifier::CONST);
+	}
+
+	bool is_restrict_pointer(Node* pointer)
+	{
+		return has_pointer_qualifier(pointer, DataTraits<DataType::POINTER>::PtrQualifier::RESTRICT);
+	}
+
+	bool is_writeonly_pointer(Node* pointer)
+	{
+		return has_pointer_qualifier(pointer, DataTraits<DataType::POINTER>::PtrQualifier::WRITEONLY);
+	}
+
+	bool is_nomutable_pointer(Node* pointer)
+	{
+		return has_pointer_qualifier(pointer, DataTraits<DataType::POINTER>::PtrQualifier::NOMUTABLE);
+	}
 }
