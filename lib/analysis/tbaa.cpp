@@ -184,7 +184,7 @@ namespace arc
 
 	std::vector<std::string> TypeBasedAliasAnalysisPass::require() const
 	{
-		return {}; /* TBAA has no dependencies */
+		return {};
 	}
 
 	Analysis* TypeBasedAliasAnalysisPass::run(const Module& module)
@@ -237,9 +237,24 @@ namespace arc
 			return;
 
 		if (node->ir_type == NodeType::ALLOC)
-			handle_allocation(result, node);
-		else if (is_memory_access(node))
-			handle_memory_access(result, node);
+		{
+			if (!node->inputs.empty())
+			{
+				/* get allocation size from count parameter */
+				std::uint64_t count = 1;
+				if (Node* count_node = node->inputs[0]; count_node->ir_type == NodeType::LIT)
+					count = static_cast<std::uint64_t>(extract_literal_value(count_node));
+
+				std::uint64_t elem_size = elem_sz(node->type_kind);
+				std::uint64_t total_size = count * elem_size;
+
+				result->add_allocation_site(node, total_size);
+			}
+			else
+			{
+				result->add_allocation_site(node, 0); /* allocation with unknown size */
+			}
+		}
 		else if (node->ir_type == NodeType::CALL)
 		{
 			/* unknown size (0) since we don't know where
@@ -253,10 +268,12 @@ namespace arc
 				if (Node* arg = node->inputs[i];
 					arg->type_kind == DataType::POINTER)
 				{
-					std::int64_t dummy_offset = 0; /* this is actually unused in trace_pointer_base */
-					Node* allocation = trace_pointer_base(arg, dummy_offset);
-					if (!is_const_pointer(arg))
-						result->mark_escaped(allocation);
+					std::int64_t dummy_offset = 0;
+					if (Node* allocation = trace_pointer_base(arg, dummy_offset))
+					{
+						if (!is_const_pointer(arg))
+							result->mark_escaped(allocation);
+					}
 				}
 			}
 		}
@@ -269,39 +286,21 @@ namespace arc
 					result->mark_escaped(allocation);
 			}
 		}
-		else if (node->ir_type == NodeType::STORE || node->ir_type == NodeType::PTR_STORE)
+		else if (is_memory_access(node))
+			handle_memory_access(result, node);
+	}
+
+	void TypeBasedAliasAnalysisPass::handle_memory_access(TypeBasedAliasResult* result, Node* node)
+	{
+		if (node->ir_type == NodeType::STORE || node->ir_type == NodeType::PTR_STORE)
 		{
-			if (node->inputs.size() >= 1 && node->inputs[0]->type_kind == DataType::POINTER)
+			if (!node->inputs.empty() && node->inputs[0]->type_kind == DataType::POINTER)
 			{
 				std::int64_t dummy_offset = 0;
 				if (Node* allocation = trace_pointer_base(node->inputs[0], dummy_offset))
 					result->mark_escaped(allocation);
 			}
 		}
-	}
-
-	void TypeBasedAliasAnalysisPass::handle_allocation(TypeBasedAliasResult* result, Node* node)
-	{
-		if (!node->inputs.empty())
-		{
-			/* get allocation size from count parameter */
-			std::uint64_t count = 1;
-			if (Node* count_node = node->inputs[0]; count_node->ir_type == NodeType::LIT)
-				count = static_cast<std::uint64_t>(extract_literal_value(count_node));
-
-			std::uint64_t elem_size = elem_sz(node->type_kind);
-			std::uint64_t total_size = count * elem_size;
-
-			result->add_allocation_site(node, total_size);
-		}
-		else
-		{
-			result->add_allocation_site(node, 0); /* allocation with unknown size */
-		}
-	}
-
-	void TypeBasedAliasAnalysisPass::handle_memory_access(TypeBasedAliasResult* result, Node* node)
-	{
 		MemoryLocation location = compute_memory_location(node);
 		if (location.allocation_site)
 			result->add_memory_access(node, location);
@@ -383,11 +382,9 @@ namespace arc
 		return location;
 	}
 
-	Node* TypeBasedAliasAnalysisPass::trace_pointer_base(Node* pointer, std::int64_t& offset) const
+	Node* TypeBasedAliasAnalysisPass::trace_pointer_base(Node* pointer, std::int64_t& offset) const // NOLINT(*-no-recursion)
 	{
-		offset = 0;
 		Node* current = pointer;
-
 		while (current)
 		{
 			switch (current->ir_type)
@@ -408,7 +405,7 @@ namespace arc
 						if (Node* offset_node = current->inputs[1];
 							offset_node->ir_type == NodeType::LIT)
 						{
-							std::int64_t add_offset = extract_literal_value(offset_node);
+							const std::int64_t add_offset = extract_literal_value(offset_node);
 							offset += add_offset;
 							current = base;
 							continue;

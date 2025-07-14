@@ -18,7 +18,7 @@ namespace arc
 	/**
 	 * @brief Result of type-based alias analysis between two memory accesses
 	 */
-	enum class TBAAResult
+	enum class TBAAResult : std::uint8_t
 	{
 		/** @brief Memory accesses never alias */
 		NO_ALIAS,
@@ -187,13 +187,13 @@ namespace arc
 		 * @brief Get the pass name
 		 * @return Pass identifier for dependency resolution
 		 */
-		std::string name() const override;
+		[[nodiscard]] std::string name() const override;
 
 		/**
 		 * @brief Get the list of passes this pass depends on
 		 * @return Vector of required pass names
 		 */
-		std::vector<std::string> require() const override;
+		[[nodiscard]] std::vector<std::string> require() const override;
 
 		/**
 		 * @brief Run type-based alias analysis on the module
@@ -224,13 +224,6 @@ namespace arc
 		 * @param node Node to analyze
 		 */
 		void analyze_node(TypeBasedAliasResult* result, Node* node);
-
-		/**
-		 * @brief Handle allocation node
-		 * @param result TBAA result to populate
-		 * @param node ALLOC node
-		 */
-		void handle_allocation(TypeBasedAliasResult* result, Node* node);
 
 		/**
 		 * @brief Handle memory access node (load/store)

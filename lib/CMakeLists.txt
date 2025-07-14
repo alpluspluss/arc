@@ -11,6 +11,7 @@ add_library(arc INTERFACE)
 add_library(Arc::Arc ALIAS arc)
 
 target_link_libraries(arc INTERFACE
+        Arc::Analysis
         Arc::Foundation
         Arc::Support
         Arc::Transform
