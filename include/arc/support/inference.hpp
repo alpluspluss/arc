@@ -346,4 +346,51 @@ namespace arc
 	        size += elem_sz(field_type);
 	    return size;
 	}
+
+	/**
+	 * @brief Check if a pointer has a specific qualifier
+	 * @param pointer Pointer node to check
+	 * @param qual Qualifier to check for
+	 * @return true if pointer has the specified qualifier
+	 */
+	bool has_pointer_qualifier(Node* pointer, DataTraits<DataType::POINTER>::PtrQualifier qual);
+
+	/**
+	 * @brief Check if a pointer is const-qualified
+	 * @param pointer Pointer node to check
+	 * @return true if pointer points to immutable data
+	 */
+	bool is_const_pointer(Node* pointer);
+
+	/**
+	 * @brief Check if a pointer is restrict-qualified
+	 * @param pointer Pointer node to check
+	 * @return true if pointer has no aliasing guarantees
+	 */
+	bool is_restrict_pointer(Node* pointer);
+
+	/**
+	 * @brief Check if a pointer is writeonly-qualified
+	 * @param pointer Pointer node to check
+	 * @return true if function only writes, never reads through this pointer
+	 */
+	bool is_writeonly_pointer(Node* pointer);
+
+	/**
+	 * @brief Check if a pointer itself is non-mutable
+	 * @param pointer Pointer node to check
+	 * @return true if pointer itself can't be modified
+	 */
+	bool is_nomutable_pointer(Node* pointer);
+
+	inline bool has_qualifier(const DataTraits<DataType::POINTER>::value& ptr_data,
+						 DataTraits<DataType::POINTER>::PtrQualifier qual)
+	{
+		return (ptr_data.qualifier & qual) != DataTraits<DataType::POINTER>::PtrQualifier::NONE;
+	}
+
+	inline bool is_const_pointer(const DataTraits<DataType::POINTER>::value& ptr_data)
+	{
+		return has_qualifier(ptr_data, DataTraits<DataType::POINTER>::PtrQualifier::CONST);
+	}
 }

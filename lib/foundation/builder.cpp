@@ -84,7 +84,7 @@ namespace arc
 		if (pointer->type_kind != DataType::POINTER)
 			throw std::invalid_argument("ptr_store requires pointer type");
 
-		const auto& [pointee, addr_space] = pointer->value.get<DataType::POINTER>();
+		const auto& [pointee, addr_space, qual] = pointer->value.get<DataType::POINTER>();
 		if (pointee)
 		{
 			if (value->type_kind != pointee->type_kind)

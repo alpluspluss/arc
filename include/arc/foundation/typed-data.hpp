@@ -175,12 +175,61 @@ namespace arc
 	template<>
 	struct DataTraits<DataType::POINTER>
 	{
+		enum class PtrQualifier : std::uint8_t
+		{
+			NONE = 0,
+			CONST = 1 << 0,      /* data pointed to is immutable AND won't escape */
+			RESTRICT = 1 << 1,   /* no aliasing with other pointers */
+			WRITEONLY = 1 << 2,  /* function only writes, never reads */
+			NOMUTABLE = 1 << 3   /* ptr itself can't be modified */
+		};
+
+		friend constexpr PtrQualifier operator|(PtrQualifier lhs, PtrQualifier rhs)
+		{
+			return static_cast<PtrQualifier>(
+				static_cast<std::uint8_t>(lhs) | static_cast<std::uint8_t>(rhs)
+			);
+		}
+
+		friend constexpr PtrQualifier operator&(PtrQualifier lhs, PtrQualifier rhs)
+		{
+			return static_cast<PtrQualifier>(
+				static_cast<std::uint8_t>(lhs) & static_cast<std::uint8_t>(rhs)
+			);
+		}
+
+		friend constexpr PtrQualifier operator^(PtrQualifier lhs, PtrQualifier rhs)
+		{
+			return static_cast<PtrQualifier>(
+				static_cast<std::uint8_t>(lhs) ^ static_cast<std::uint8_t>(rhs)
+			);
+		}
+
+		friend constexpr PtrQualifier operator~(PtrQualifier qual)
+		{
+			return static_cast<PtrQualifier>(~static_cast<std::uint8_t>(qual));
+		}
+
+		friend constexpr PtrQualifier& operator|=(PtrQualifier& lhs, PtrQualifier rhs)
+		{
+			lhs = lhs | rhs;
+			return lhs;
+		}
+
+		friend constexpr PtrQualifier& operator&=(PtrQualifier& lhs, PtrQualifier rhs)
+		{
+			lhs = lhs & rhs;
+			return lhs;
+		}
+
 		struct value
 		{
 			/**	@brief Pointer to a `Node` structure */
 			Node *pointee;
 			/** @brief The address space of the pointer */
 			std::uint32_t addr_space;
+			/** @brief Pointer qualifiers */
+			PtrQualifier qualifier = PtrQualifier::NONE;
 		} __attribute__((packed));
 	};
 
