@@ -100,7 +100,9 @@ namespace arc
 		/** @brief Build a vector from scalar values of same operand */
 		VECTOR_SPLAT,
 		/** @brief Access pointer/data at a specific offset */
-		ACCESS
+		ACCESS,
+		/** @brief Merge multiple values from different paths into a single value */
+		FROM
 	};
 
 	enum class AtomicOrdering : std::uint8_t

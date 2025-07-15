@@ -34,6 +34,10 @@ public:
 	int computation_result = 42;
 	bool was_updated = false;
 
+	[[nodiscard]] std::string name() const override
+	{
+		return "mock-analysis-result";
+	}
 	bool update(const std::vector<arc::Region *> &modified_regions) override
 	{
 		was_updated = true;
@@ -62,6 +66,10 @@ class DependentAnalysisResult final : public arc::Analysis
 public:
 	int value = 100;
 
+	[[nodiscard]] std::string name() const override
+	{
+		return "dependent-analysis-result";
+	}
 	bool update(const std::vector<arc::Region *> &) override
 	{
 		return false;
@@ -280,12 +288,12 @@ TEST_F(PassManagerFixture, TaskGraphCycleDetection)
 	class CyclicPass : public arc::AnalysisPass
 	{
 	public:
-		std::string name() const override
+		[[nodiscard]] std::string name() const override
 		{
 			return "cyclic-pass";
 		}
 
-		std::vector<std::string> require() const override
+		[[nodiscard]] std::vector<std::string> require() const override
 		{
 			return { "dependent-analysis" };
 		}
@@ -299,12 +307,12 @@ TEST_F(PassManagerFixture, TaskGraphCycleDetection)
 	class CyclicDependentPass : public arc::AnalysisPass
 	{
 	public:
-		std::string name() const override
+		[[nodiscard]] std::string name() const override
 		{
 			return "dependent-analysis";
 		}
 
-		std::vector<std::string> require() const override
+		[[nodiscard]] std::vector<std::string> require() const override
 		{
 			return { "cyclic-pass" };
 		}
@@ -327,12 +335,12 @@ TEST_F(PassManagerFixture, ThreadSafeAnalysisAccess)
 	class ParallelTransform1 : public arc::TransformPass
 	{
 	public:
-		std::string name() const override
+		[[nodiscard]] std::string name() const override
 		{
 			return "parallel-transform-1";
 		}
 
-		std::vector<std::string> require() const override
+		[[nodiscard]] std::vector<std::string> require() const override
 		{
 			return { "mock-analysis" };
 		}
@@ -349,12 +357,12 @@ TEST_F(PassManagerFixture, ThreadSafeAnalysisAccess)
 	class ParallelTransform2 : public arc::TransformPass
 	{
 	public:
-		std::string name() const override
+		[[nodiscard]] std::string name() const override
 		{
 			return "parallel-transform-2";
 		}
 
-		std::vector<std::string> require() const override
+		[[nodiscard]] std::vector<std::string> require() const override
 		{
 			return { "mock-analysis" };
 		}

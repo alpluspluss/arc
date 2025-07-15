@@ -249,7 +249,7 @@ TEST_F(TBAAFixture, NonEscapedLocalsNoAlias)
 			auto* local1 = fb.alloc<arc::DataType::INT32>(fb.lit(1));
 			auto* local2 = fb.alloc<arc::DataType::INT32>(fb.lit(1));
 
-			/* both locals stay local - no escaping */
+			/* both locals stay local */
 			store1_node = fb.store(fb.lit(42), local1);
 			store2_node = fb.store(fb.lit(99), local2);
 			[[maybe_unused]] auto* load1 = fb.load(local1);

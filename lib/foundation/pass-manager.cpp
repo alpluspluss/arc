@@ -1,6 +1,7 @@
 /* this project is part of the Arc project; licensed under the MIT license. see LICENSE for more info */
 
 #include <exception>
+#include <format>
 #include <arc/foundation/module.hpp>
 #include <arc/foundation/pass-manager.hpp>
 #include <arc/foundation/region.hpp>
@@ -16,7 +17,7 @@ namespace arc
 		task_graph.build_dependencies();
 
 		/* convert TaskNode batches to Pass batches and register passes */
-		for (auto batches = task_graph.compute_execution_batches();
+		for (const auto batches = task_graph.compute_execution_batches();
 		     const auto& batch : batches)
 		{
 			std::vector<Pass*> pass_batch;
@@ -223,12 +224,12 @@ namespace arc
 		if (Analysis* result = analysis->run(module))
 		{
 			std::unique_lock lock(analyses_mutex); /* OK for single writer */
-			analyses[analysis->name()] = result;
+			analyses[result->name()] = result;
 		}
 		else
 		{
 			throw std::runtime_error(
-				std::format("analysis '{}' returned null result", analysis->name())
+				std::format("analysis pass: '{}' returned null result", analysis->name())
 			);
 		}
 	}

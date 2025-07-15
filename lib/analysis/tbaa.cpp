@@ -1,5 +1,6 @@
 /* this project is part of the Arc project; licensed under the MIT license. see LICENSE for more info */
 
+#include <print>
 #include <arc/analysis/tbaa.hpp>
 #include <arc/foundation/module.hpp>
 #include <arc/foundation/node.hpp>
@@ -189,16 +190,12 @@ namespace arc
 
 	Analysis* TypeBasedAliasAnalysisPass::run(const Module& module)
 	{
-		ach::shared_allocator<TypeBasedAliasResult> alloc;
-		TypeBasedAliasResult* result = alloc.allocate(1);
-		std::construct_at(result);
-
+		auto* result = allocate_result<TypeBasedAliasResult>();
 		for (Node* func : module.functions())
 		{
 			if (func->ir_type == NodeType::FUNCTION)
 				analyze_function(result, func, const_cast<Module&>(module));
 		}
-
 		return result;
 	}
 
