@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <print>
 #include <queue>
 #include <arc/foundation/module.hpp>
 #include <arc/foundation/pass-manager.hpp>
@@ -28,7 +29,6 @@ namespace arc
 	std::vector<Region *> CommonSubexpressionEliminationPass::run(Module &module, PassManager &pm)
 	{
 		const auto &tbaa_result = pm.get<TypeBasedAliasResult>();
-
 		value_numbers.clear();
 		expression_to_node.clear();
 		next_value_number = 1;
@@ -115,7 +115,7 @@ namespace arc
 				if (!is_eligible_for_cse(node))
 					continue;
 
-				ValueNumber vn = compute_value_number(node, tbaa_result);
+				ValueNumber vn = compute_v(node, tbaa_result);
 				if (vn == 0)
 					continue;
 
@@ -130,6 +130,7 @@ namespace arc
 						if (loads_may_alias(existing, node, tbaa_result))
 							continue;
 					}
+
 					/* replace all uses with existing equivalent expression */
 					if (replace_all_uses(node, existing))
 					{
@@ -149,31 +150,33 @@ namespace arc
 		return eliminated;
 	}
 
-	ValueNumber CommonSubexpressionEliminationPass::compute_value_number(
+	ValueNumber CommonSubexpressionEliminationPass::compute_v( // NOLINT(*-no-recursion)
 		Node *node, const TypeBasedAliasResult &tbaa_result)
 	{
 		if (!node)
 			return 0;
 
 		/* return cached value number if available */
-		if (auto it = value_numbers.find(node);
+		if (const auto it = value_numbers.find(node);
 			it != value_numbers.end())
+		{
 			return it->second;
+		}
 
 		ValueNumber vn = 0;
 		switch (node->ir_type)
 		{
 			case NodeType::LIT:
-				vn = compute_literal_value_number(node);
+				vn = compute_lv(node);
 				break;
 			case NodeType::LOAD:
 			case NodeType::PTR_LOAD:
 			case NodeType::ATOMIC_LOAD:
-				vn = compute_load_value_number(node, tbaa_result);
+				vn = compute_ldv(node, tbaa_result);
 				break;
 			default:
 				if (!node->inputs.empty())
-					vn = compute_expression_value_number(node);
+					vn = compute_exprv(node);
 				else
 					vn = next_value_number++;
 				break;
@@ -185,10 +188,10 @@ namespace arc
 		return vn;
 	}
 
-	ValueNumber CommonSubexpressionEliminationPass::compute_literal_value_number(Node *node) // NOLINT(*-no-recursion)
+	ValueNumber CommonSubexpressionEliminationPass::compute_lv(Node *node) // NOLINT(*-no-recursion)
 	{
 		if (!node || node->ir_type != NodeType::LIT)
-			throw std::invalid_argument("compute_literal_value_number requires LIT node");
+			throw std::invalid_argument("compute_lv requires LIT node");
 
 		auto hash = static_cast<ValueNumber>(node->type_kind);
 		switch (node->type_kind)
@@ -237,7 +240,7 @@ namespace arc
 				break;
 			}
 			case DataType::VECTOR:
-				hash = compute_vector_literal_value_number(node);
+				hash = compute_veclv(node);
 				break;
 			default:
 				throw std::runtime_error(
@@ -247,15 +250,15 @@ namespace arc
 		return hash == 0 ? 1 : hash;
 	}
 
-	ValueNumber CommonSubexpressionEliminationPass::compute_vector_literal_value_number(Node *node) // NOLINT(*-no-recursion)
+	ValueNumber CommonSubexpressionEliminationPass::compute_veclv(Node *node) // NOLINT(*-no-recursion)
 	{
 		if (node->type_kind != DataType::VECTOR)
-			throw std::invalid_argument("compute_vector_literal_value_number requires VECTOR node");
+			throw std::invalid_argument("compute_veclv requires VECTOR node");
 
-		const auto &vec_data = node->value.get<DataType::VECTOR>();
+		const auto &[elem_type, lane_count] = node->value.get<DataType::VECTOR>();
 		auto hash = static_cast<ValueNumber>(DataType::VECTOR);
-		hash = hash_combine(hash, static_cast<std::uint64_t>(vec_data.elem_type));
-		hash = hash_combine(hash, static_cast<std::uint64_t>(vec_data.lane_count));
+		hash = hash_combine(hash, static_cast<std::uint64_t>(elem_type));
+		hash = hash_combine(hash, static_cast<std::uint64_t>(lane_count));
 
 		/* for vector literals created by VECTOR_BUILD, hash the individual elements */
 		if (node->ir_type == NodeType::VECTOR_BUILD)
@@ -263,21 +266,16 @@ namespace arc
 			for (Node *element: node->inputs)
 			{
 				if (element && element->ir_type == NodeType::LIT)
-				{
-					ValueNumber elem_vn = compute_literal_value_number(element);
-					hash = hash_combine(hash, elem_vn);
-				}
+					hash = hash_combine(hash, compute_lv(element));
 				else
-				{
 					return 0; /* can't compute deterministic hash without literal elements */
-				}
 			}
 		}
 
 		return hash == 0 ? 1 : hash;
 	}
 
-	ValueNumber CommonSubexpressionEliminationPass::compute_expression_value_number(Node *node)
+	ValueNumber CommonSubexpressionEliminationPass::compute_exprv(Node *node)
 	{
 		if (node->inputs.empty())
 			return 0;
@@ -321,7 +319,7 @@ namespace arc
 		return hash == 0 ? 1 : hash;
 	}
 
-	ValueNumber CommonSubexpressionEliminationPass::compute_load_value_number(
+	ValueNumber CommonSubexpressionEliminationPass::compute_ldv( // NOLINT(*-no-recursion)
 		Node *node, const TypeBasedAliasResult &tbaa_result)
 	{
 		if (!is_load_operation(node))
@@ -338,9 +336,15 @@ namespace arc
 		ValueNumber addr_vn = 0;
 		if (const auto it = value_numbers.find(address);
 			it != value_numbers.end())
+		{
 			addr_vn = it->second;
+		}
 		else
-			return 0; /* can't compute without address value number */
+		{
+			addr_vn = compute_v(address, tbaa_result);
+			if (addr_vn == 0)
+				return 0; /* can't compute without address value number */
+		}
 
 		auto hash = static_cast<ValueNumber>(node->ir_type);
 		hash = hash_combine(hash, static_cast<ValueNumber>(node->type_kind));
@@ -360,7 +364,7 @@ namespace arc
 			if (Node *ordering = node->inputs[1];
 				ordering && ordering->ir_type == NodeType::LIT)
 			{
-				hash = hash_combine(hash, compute_literal_value_number(ordering));
+				hash = hash_combine(hash, compute_lv(ordering));
 			}
 			else
 				return 0; /* can't compute without ordering information */
@@ -467,9 +471,13 @@ namespace arc
 		if (!a || !b || !is_load_operation(a) || !is_load_operation(b))
 			return true;
 
-		/* use TBAA to determine aliasing relationship */
+		/* use TBAA to determine aliasing relationship;
+		 * the pass only consider it unsafe if it is uncertain.
+		 * `MUST_ALIAS` means they access the exact same location which is safe to
+		 * optimize away, while `NO_ALIAS` means they definitely do not
+		 * interfere which is also safe.*/
 		const TBAAResult alias_result = tbaa_result.alias(a, b);
-		return alias_result != TBAAResult::NO_ALIAS;
+		return alias_result == TBAAResult::MAY_ALIAS || alias_result == TBAAResult::PARTIAL_ALIAS;
 	}
 
 	bool CommonSubexpressionEliminationPass::replace_all_uses(Node *node_to_replace, Node *replacement_node)

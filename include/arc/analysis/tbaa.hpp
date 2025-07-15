@@ -82,6 +82,11 @@ namespace arc
 	class TypeBasedAliasResult final : public Analysis
 	{
 	public:
+		[[nodiscard]] std::string name() const override
+		{
+			return "type-based-alias-analysis";
+		}
+
 		/**
 		 * @brief Update analysis results incrementally for modified regions
 		 * @param modified_regions Regions that were modified

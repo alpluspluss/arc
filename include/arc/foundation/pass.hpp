@@ -21,6 +21,12 @@ namespace arc
 		virtual ~Analysis() = default;
 
 		/**
+		 * @brief Get the unique name of this object
+		 * @return String object of this analysis result
+		 */
+		[[nodiscard]] virtual std::string name() const = 0;
+
+		/**
 		 * @brief Update analysis results incrementally for modified regions
 		 * @return true if incremental update succeeded, false if full recomputation needed
 		 */

@@ -217,7 +217,7 @@ namespace arc
 
 					/* for LOAD nodes, it needs to inherit the type from the source node,
 					 * so we can resolve it directly from the input */
-					if (node.ir_type == NodeType::LOAD && node.inputs.size() >= 1)
+					if (node.ir_type == NodeType::LOAD && !node.inputs.empty())
 					{
 						if (Node* source = node.inputs[0];
 							source->type_kind == DataType::POINTER)
@@ -459,10 +459,9 @@ namespace arc
 
 			std::size_t pending_padding = 0;
 
-			for (std::size_t i = 0; i < struct_data.fields.size(); ++i)
+			for (auto [name_id, field_type, field_data] : struct_data.fields)
 			{
-				const auto &[name_id, field_type, field_data] = struct_data.fields[i];
-				auto field_name = module.strtable().get(name_id);
+					auto field_name = module.strtable().get(name_id);
 				if (is_padding_field(field_name.data()))
 				{
 					pending_padding += get_padding_size(field_type);

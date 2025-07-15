@@ -139,10 +139,9 @@ namespace arc
 		if (!infer_binary_t(lhs, rhs))
 			throw std::invalid_argument("incompatible types for binary operation");
 
-		/* both operands now have compatible types */
+		/* comparison operations always return bool;
+		 * if the result type is VECTOR, copy the vector data from lhs */
 		DataType result_type = lhs->type_kind;
-
-		/* comparison operations always return bool */
 		if (op == NodeType::EQ || op == NodeType::NEQ ||
 		    op == NodeType::LT || op == NodeType::LTE ||
 		    op == NodeType::GT || op == NodeType::GTE)
@@ -151,6 +150,8 @@ namespace arc
 		}
 
 		Node *node = create_node(op, result_type);
+		if (result_type == DataType::VECTOR && lhs->value.type() == DataType::VECTOR)
+			node->value = lhs->value;
 		connect_inputs(node, { lhs, rhs });
 		return node;
 	}

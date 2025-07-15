@@ -2,11 +2,9 @@
 
 #pragma once
 
-#include <format>
 #include <shared_mutex>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <unordered_map>
 #include <vector>
 #include <arc/foundation/module.hpp>
@@ -87,14 +85,16 @@ namespace arc
 		const T& get()
 		{
 			std::shared_lock lock(analyses_mutex); /* OK for concurrent reads */
-			for (const auto& [name, analysis] : analyses)
+			/* get the name from a default instance; all objects should have the same name
+			 * if they are of the same type */
+			const std::string name = T().name();
+
+			if (const auto it = analyses.find(name);
+				it != analyses.end())
 			{
-				if (auto* result = dynamic_cast<const T*>(analysis))
-				{
-					return *result;
-				}
+				return *dynamic_cast<const T*>(it->second);
 			}
-			throw std::runtime_error("analysis result not available");
+			throw std::runtime_error("analysis result not available: " + name);
 		}
 
 		/**

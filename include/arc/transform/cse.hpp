@@ -81,21 +81,21 @@ namespace arc
 		 * @param tbaa_result TBAA analysis result for memory operations
 		 * @return Value number, or 0 if computation failed
 		 */
-		ValueNumber compute_value_number(Node *node, const TypeBasedAliasResult &tbaa_result);
+		ValueNumber compute_v(Node *node, const TypeBasedAliasResult &tbaa_result);
 
 		/**
 		 * @brief Compute value number for literal nodes
 		 * @param node Literal node to hash
 		 * @return Value number based on literal value and type
 		 */
-		ValueNumber compute_literal_value_number(Node *node);
+		ValueNumber compute_lv(Node *node);
 
 		/**
 		 * @brief Compute value number for expression nodes
 		 * @param node Expression node to hash
 		 * @return Value number based on operation and operand value numbers
 		 */
-		ValueNumber compute_expression_value_number(Node *node);
+		ValueNumber compute_exprv(Node *node);
 
 		/**
 		 * @brief Compute value number for memory load operations
@@ -103,14 +103,14 @@ namespace arc
 		 * @param tbaa_result TBAA analysis for location information
 		 * @return Value number incorporating memory location
 		 */
-		ValueNumber compute_load_value_number(Node *node, const TypeBasedAliasResult &tbaa_result);
+		ValueNumber compute_ldv(Node *node, const TypeBasedAliasResult &tbaa_result);
 
 		/**
 		 * @brief Compute value number for vector literal nodes
 		 * @param node Vector literal node
 		 * @return Value number based on vector type and elements
 		 */
-		ValueNumber compute_vector_literal_value_number(Node *node);
+		ValueNumber compute_veclv(Node *node);
 
 		/**
 		 * @brief Check if a node represents a memory load operation

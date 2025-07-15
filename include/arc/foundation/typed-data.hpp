@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cstdint>
+#include <format>
 #include <memory>
 #include <tuple>
 #include <arc/support/slice.hpp>
@@ -373,7 +374,17 @@ case DataType::dt: return std::is_same_v<T, typename DataTraits<DataType::dt>::v
 			/* DataType must match Node::type_kind to enforce storage contract.
 				* provides compile-time type safety with runtime type checking */
 			if (current_type != T)
-				throw std::bad_variant_access();
+			{
+				if (current_type != T)
+				{
+					std::string expected_type = datatstr(T);
+					std::string actual_type = datatstr(current_type);
+					throw std::runtime_error(
+						std::format("TypedData::get() type mismatch: expected {}, but holding {}",
+								   expected_type, actual_type)
+					);
+				}
+			}
 			return *std::launder(reinterpret_cast<typename DataTraits<T>::value *>(storage));
 		}
 
@@ -388,7 +399,14 @@ case DataType::dt: return std::is_same_v<T, typename DataTraits<DataType::dt>::v
 		const typename DataTraits<T>::value &get() const
 		{
 			if (current_type != T)
-				throw std::bad_variant_access();
+			{
+				std::string expected_type = datatstr(T);
+				std::string actual_type = datatstr(current_type);
+				throw std::runtime_error(
+					std::format("TypedData::get() type mismatch: expected {}, but holding {}",
+							   expected_type, actual_type)
+				);
+			}
 			return *std::launder(reinterpret_cast<const typename DataTraits<T>::value *>(storage));
 		}
 
@@ -472,6 +490,31 @@ case DataType::dt: return std::is_same_v<T, typename DataTraits<DataType::dt>::v
 		void copy_from(const TypedData &other);
 
 		void move_from(TypedData &&other) noexcept;
+
+		static std::string datatstr(DataType type)
+		{
+			switch (type)
+			{
+				case DataType::VOID: return "VOID";
+				case DataType::BOOL: return "BOOL";
+				case DataType::INT8: return "INT8";
+				case DataType::INT16: return "INT16";
+				case DataType::INT32: return "INT32";
+				case DataType::INT64: return "INT64";
+				case DataType::UINT8: return "UINT8";
+				case DataType::UINT16: return "UINT16";
+				case DataType::UINT32: return "UINT32";
+				case DataType::UINT64: return "UINT64";
+				case DataType::FLOAT32: return "FLOAT32";
+				case DataType::FLOAT64: return "FLOAT64";
+				case DataType::POINTER: return "POINTER";
+				case DataType::ARRAY: return "ARRAY";
+				case DataType::STRUCT: return "STRUCT";
+				case DataType::FUNCTION: return "FUNCTION";
+				case DataType::VECTOR: return "VECTOR";
+				default: return "UNKNOWN(" + std::to_string(static_cast<int>(type)) + ")";
+			}
+		}
 	};
 
 	/**
