@@ -161,6 +161,17 @@ ATOMIC_LOAD[address, SEQ_CST]                    /* sequentially consistent load
 ATOMIC_CAS[address, expected, desired, ACQ_REL]  /* acquire-release CAS */
 ```
 
+## FROM Node Semantics
+
+The `FROM` node represents value merging at control flow join points, typically created during SSA 
+construction (SROA/Mem2Reg). All source operands must have identical types.
+
+```cpp
+/* Example: Variable promoted from memory to register */
+%result = i32 FROM [%else_value, %then_value]    /* order doesn't matter */
+%result = i32 FROM [%then_value, %else_value]    /* equivalent */
+```
+
 ## Error Conditions
 
 ### Type Compatibility Errors

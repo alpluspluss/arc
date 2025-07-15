@@ -125,6 +125,17 @@ ACCESS: [struct_or_array, index]    /* what you're accessing, which element */
 ```
 *Rationale: Container is primary data, index/field selector specifies which part*
 
+### Control Flow Merge Operations
+
+**Pattern**: Unordered source values
+```
+FROM: [source1, source2, source3, ...] /* values from different paths */
+```
+
+*Rationale: Source values are primary data being merged; order is irrelevant 
+since control flow context is available via `source->parent` region information. 
+Only constraint is standard SSA dominance which is t be defined before the FROM node.
+
 ## Type Safety Constraints
 
 ### Operand Type Constraints
@@ -167,8 +178,8 @@ The builder API abstracts operand ordering while maintaining semantic consistenc
 
 ```cpp
 /* these produce identical operand patterns */
-builder.store(value, location);           /* STORE[value, location] */
-builder.store(value).to(location);        /* STORE[value, location] */
-builder.store(value).through(pointer);    /* PTR_STORE[value, pointer] */
-builder.store(value).to_atomic(location); /* ATOMIC_STORE[value, location, ordering] */
+builder.store(value, location);             /* STORE[value, location] */
+builder.store(value).to(location);          /* STORE[value, location] */
+builder.store(value).through(pointer);      /* PTR_STORE[value, pointer] */
+builder.store(value).to_atomic(location);   /* ATOMIC_STORE[value, location, ordering] */
 ```

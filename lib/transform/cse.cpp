@@ -306,7 +306,11 @@ namespace arc
 		}
 
 		/* sort operands to normalize commutative operations */
-		if (is_commutative(node->ir_type) && input_vns.size() == 2)
+		if (node->ir_type == NodeType::FROM)
+		{
+			std::ranges::sort(input_vns);
+		}
+		else if (is_commutative(node->ir_type) && input_vns.size() == 2)
 		{
 			if (input_vns[0] > input_vns[1])
 				std::swap(input_vns[0], input_vns[1]);
@@ -436,6 +440,7 @@ namespace arc
 			case NodeType::VECTOR_EXTRACT:
 			case NodeType::VECTOR_SPLAT:
 			case NodeType::ACCESS:
+			case NodeType::FROM:
 				break;
 
 			default:
