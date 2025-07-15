@@ -31,7 +31,7 @@ protected:
 	std::unique_ptr<arc::Builder> builder;
 	std::unique_ptr<arc::PassManager> pass_manager;
 
-	std::size_t count_nodes_in_module() const
+	[[nodiscard]] std::size_t count_nodes_in_module() const
 	{
 		std::size_t count = 0;
 		for (const auto *fn: module->functions())
