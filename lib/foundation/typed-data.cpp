@@ -59,7 +59,7 @@ namespace arc
 			auto& fn_data = *std::launder(reinterpret_cast<DataTraits<DataType::FUNCTION>::value*>(storage));
 			if (fn_data.return_type)
 			{
-				ach::allocator<TypedData> alloc;
+				ach::shared_allocator<TypedData> alloc;
 				std::destroy_at(fn_data.return_type);
 				alloc.deallocate(fn_data.return_type, 1);
 			}
@@ -117,7 +117,7 @@ namespace arc
 			DataTraits<DataType::FUNCTION>::value fn_data;
 			if (other_fn_data.return_type)
 			{
-				ach::allocator<TypedData> alloc;
+				ach::shared_allocator<TypedData> alloc;
 				TypedData* new_return_type = alloc.allocate(1);
 				std::construct_at(new_return_type, *other_fn_data.return_type);
 				fn_data.return_type = new_return_type;

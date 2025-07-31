@@ -455,6 +455,31 @@ namespace arc
 		return node;
 	}
 
+	Node *Builder::from(const std::vector<Node *> &sources)
+	{
+		if (sources.empty())
+			throw std::invalid_argument("FROM node requires at least one source");
+
+		DataType result_type = sources[0]->type_kind;
+		for (const Node *source : sources)
+		{
+			if (!source)
+				throw std::invalid_argument("FROM node cannot have null sources");
+
+			if (source->type_kind != result_type)
+			{
+				DataType promoted = infer_primitive_types(result_type, source->type_kind);
+				if (promoted == DataType::VOID)
+					throw std::invalid_argument("FROM node sources have incompatible types");
+				result_type = promoted;
+			}
+		}
+
+		Node *from_node = create_node(NodeType::FROM, result_type);
+		connect_inputs(from_node, sources);
+		return from_node;
+	}
+
 	void Builder::connect_inputs(Node *node, const std::vector<Node *> &inputs)
 	{
 		if (!node)

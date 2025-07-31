@@ -362,6 +362,8 @@ namespace arc
 					return "vector_splat";
 				case NodeType::ACCESS:
 					return "access";
+				case NodeType::FROM:
+					return "from";
 				default:
 					return "unknown";
 			}

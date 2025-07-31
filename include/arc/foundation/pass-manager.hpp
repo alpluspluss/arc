@@ -124,6 +124,7 @@ namespace arc
 	private:
 		std::unordered_map<std::string, Analysis*> analyses;
 		std::unordered_map<std::string, Pass*> pass_registry;
+		std::unordered_map<std::string, std::string> pass_to_result;
 		std::vector<Pass*> passes;
 		std::vector<std::vector<Pass*>> execution_batches; /* for TaskGraph mode */
 		ExecutionPolicy exec_policy;
