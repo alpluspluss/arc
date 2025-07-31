@@ -155,8 +155,7 @@ TEST_F(PassManagerFixture, BasicPassExecution)
 	EXPECT_EQ(execution_order.size(), 2);
 	EXPECT_EQ(execution_order[0], "mock-analysis");
 	EXPECT_EQ(execution_order[1], "simple-transform");
-
-	EXPECT_TRUE(pm->has_analysis("mock-analysis"));
+	EXPECT_TRUE(pm->has_analysis("mock-analysis-result"));
 }
 
 TEST_F(PassManagerFixture, DependencyResolution)
@@ -170,8 +169,8 @@ TEST_F(PassManagerFixture, DependencyResolution)
 	EXPECT_EQ(execution_order[0], "mock-analysis");
 	EXPECT_EQ(execution_order[1], "dependent-analysis");
 
-	EXPECT_TRUE(pm->has_analysis("mock-analysis"));
-	EXPECT_TRUE(pm->has_analysis("dependent-analysis"));
+	EXPECT_TRUE(pm->has_analysis("mock-analysis-result"));
+	EXPECT_TRUE(pm->has_analysis("dependent-analysis-result"));
 }
 
 TEST_F(PassManagerFixture, MissingDependencyError)
@@ -189,8 +188,8 @@ TEST_F(PassManagerFixture, AnalysisInvalidation)
 			.add<MockTransformPass>();
 
 	pm->run(*module);
-	EXPECT_TRUE(pm->has_analysis("mock-analysis"));
-	EXPECT_FALSE(pm->has_analysis("dependent-analysis"));
+	EXPECT_TRUE(pm->has_analysis("mock-analysis-result"));
+	EXPECT_FALSE(pm->has_analysis("dependent-analysis-result"));
 
 	const auto &analysis = pm->get<MockAnalysisResult>();
 	EXPECT_TRUE(analysis.was_updated);
@@ -211,11 +210,11 @@ TEST_F(PassManagerFixture, ClearAnalyses)
 	pm->add<MockAnalysisPass>();
 	pm->run(*module);
 
-	EXPECT_TRUE(pm->has_analysis("mock-analysis"));
+	EXPECT_TRUE(pm->has_analysis("mock-analysis-result"));
 
 	pm->clear_analyses();
 
-	EXPECT_FALSE(pm->has_analysis("mock-analysis"));
+	EXPECT_FALSE(pm->has_analysis("mock-analysis-result"));
 }
 
 TEST_F(PassManagerFixture, GetAnalysisResult)
@@ -247,7 +246,7 @@ TEST_F(PassManagerFixture, TaskGraphBasicExecution)
 	EXPECT_EQ(execution_order.size(), 2);
 	EXPECT_EQ(execution_order[0], "mock-analysis");
 	EXPECT_EQ(execution_order[1], "simple-transform");
-	EXPECT_TRUE(task_pm.has_analysis("mock-analysis"));
+	EXPECT_TRUE(task_pm.has_analysis("mock-analysis-result"));
 }
 
 TEST_F(PassManagerFixture, TaskGraphDependencyBatching)
@@ -349,7 +348,7 @@ TEST_F(PassManagerFixture, ThreadSafeAnalysisAccess)
 		{
 			const auto &analysis = pm.get<MockAnalysisResult>();
 			EXPECT_EQ(analysis.computation_result, 42);
-			std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Simulate work
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 			return {};
 		}
 	};

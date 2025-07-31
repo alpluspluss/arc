@@ -146,7 +146,7 @@ namespace ach
 			else
 			{
 				auto &state = shared_state();
-				typename SharedState::AtomicHeaderPtr expected =
+				auto expected =
 						state.free_lists[size_class].load(std::memory_order_acquire);
 				do
 				{

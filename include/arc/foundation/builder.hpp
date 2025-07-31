@@ -429,10 +429,6 @@ namespace arc
 		 */
 		Node* array_index(Node* array, Node* index);
 
-	private:
-		Module &module;
-		Region *current_region;
-
 		/**
 		 * @brief Create a new node with specified type
 		 * @param type Node type
@@ -440,6 +436,17 @@ namespace arc
 		 * @return Newly created node
 		 */
 		Node *create_node(NodeType type, DataType result_type = DataType::VOID);
+
+		/**
+		 * @brief Create a FROM node that merges values from different control flow paths
+		 * @param sources Vector of source nodes from different paths
+		 * @return Node representing the merged value
+		 */
+		Node *from(const std::vector<Node *> &sources);
+
+	private:
+		Module &module;
+		Region *current_region;
 
 		/**
 		 * @brief Connect inputs to a node

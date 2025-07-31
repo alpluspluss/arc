@@ -164,27 +164,37 @@ namespace arc
 	}
 
 	void PassManager::invalidate_analyses(const std::vector<Region*>& modified_regions,
-	                                     const std::vector<std::string>& invalidated_analyses)
+									  const std::vector<std::string>& invalidated_analyses)
 	{
 		std::unique_lock lock(analyses_mutex);
-		for (const std::string& analysis_name : invalidated_analyses)
+		for (const std::string& pass_name : invalidated_analyses)
 		{
-			if (auto it = analyses.find(analysis_name); it != analyses.end())
-			{
-				Analysis* analysis = it->second;
-				if (!analysis)
-				{
-					analyses.erase(it);
-					continue;
-				}
+			/* convert pass name to result name for lookup */
+			auto mapping_it = pass_to_result.find(pass_name);
+			if (mapping_it == pass_to_result.end())
+				continue; /* pass was never run */
 
-				/* attempt to update the analysis incrementally;
-				 * if it fails, just do a full invalidation by removing it
-				 * from the cache entirely */
-				if (!analysis->update(modified_regions))
-					analyses.erase(it);
-				/* if `Analysis::update` returns true, it can stay cache with updated results */
+			const std::string& result_name = mapping_it->second;
+			auto analysis_it = analyses.find(result_name);
+			if (analysis_it == analyses.end())
+				continue; /* already invalidated */
+
+			Analysis* analysis = analysis_it->second;
+			if (!analysis)
+			{
+				analyses.erase(analysis_it);
+				continue;
 			}
+
+			/* attempt to update the analysis incrementally;
+			 * if it fails, just do a full invalidation by removing it
+			 * from the cache entirely */
+			if (!analysis->update(modified_regions))
+			{
+				analyses.erase(analysis_it);
+				pass_to_result.erase(mapping_it); /* also remove mapping */
+			}
+			/* if `Analysis::update` returns true, it can stay cached with updated results */
 		}
 	}
 
@@ -206,10 +216,14 @@ namespace arc
 			{
 				if (!has_analysis(dep))
 				{
-					throw std::runtime_error(
-						std::format("pass '{}' requires analysis '{}' which hasn't been run",
-						           pass->name(), dep)
-					);
+					auto mapping_it = pass_to_result.find(dep);
+					if (mapping_it == pass_to_result.end() || !has_analysis(mapping_it->second))
+					{
+						throw std::runtime_error(
+							std::format("pass '{}' requires analysis '{}' which hasn't been run",
+									   pass->name(), dep)
+						);
+					}
 				}
 			}
 		}
@@ -217,19 +231,24 @@ namespace arc
 
 	void PassManager::run_analysis(AnalysisPass* analysis, const Module& module)
 	{
+		const std::string pass_name = analysis->name();
 		/* skip if already cached */
-		if (has_analysis(analysis->name()))
-			return;
+		if (const auto it = pass_to_result.find(pass_name); it != pass_to_result.end())
+		{
+			if (has_analysis(it->second))
+				return;
+		}
 
 		if (Analysis* result = analysis->run(module))
 		{
 			std::unique_lock lock(analyses_mutex); /* OK for single writer */
 			analyses[result->name()] = result;
+			pass_to_result[pass_name] = result->name();
 		}
 		else
 		{
 			throw std::runtime_error(
-				std::format("analysis pass: '{}' returned null result", analysis->name())
+				std::format("analysis pass: '{}' returned null result", pass_name)
 			);
 		}
 	}
