@@ -339,4 +339,47 @@ namespace arc
 
 		return true;
 	}
+
+	Region *Region::find_lca(Region *other) const
+	{
+		if (!other || this == other)
+			return const_cast<Region*>(this);
+
+		std::size_t depth_a = 0, depth_b = 0;
+		for (const Region* r = this->parent(); r; r = r->parent())
+			++depth_a;
+		for (const Region* r = other->parent(); r; r = r->parent())
+			++depth_b;
+
+		Region* a = const_cast<Region*>(this);
+		Region* b = other;
+
+		/* bring to same level and walk up together */
+		while (depth_a > depth_b)
+		{
+			a = a->parent();
+			--depth_a;
+		}
+
+		while (depth_b > depth_a)
+		{
+			b = b->parent();
+			--depth_b;
+		}
+
+		while (a && b && a != b)
+		{
+			a = a->parent();
+			b = b->parent();
+		}
+
+		return a;
+	}
+
+	void Region::walk_dominated_regions(const std::function<void(Region*)>& visitor) const
+	{
+		visitor(const_cast<Region*>(this));
+		for (const Region* child : children())
+			child->walk_dominated_regions(visitor);
+	}
 }

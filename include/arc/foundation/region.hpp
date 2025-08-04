@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <functional>
 #include <string_view>
 #include <vector>
 #include <arc/foundation/node.hpp>
@@ -154,6 +155,19 @@ namespace arc
 			                               });
 			return it != ns.end() ? *it : nullptr;
 		}
+
+		/**
+		 * @brief Find the lowest common ancestor with another region
+		 * @param other Region to find LCA with
+		 * @return LCA region, or nullptr if no common ancestor
+		 */
+		[[nodiscard]] Region* find_lca(Region* other) const;
+
+		/**
+		 * @brief Walk this region and all dominated regions in pre-order
+		 * @param visitor Function to call for each region
+		 */
+		void walk_dominated_regions(const std::function<void(Region*)>& visitor) const;
 
 	private:
 		std::vector<Region*> childs; /** @brief Children regions */
