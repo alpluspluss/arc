@@ -169,6 +169,13 @@ namespace arc
 		 */
 		void walk_dominated_regions(const std::function<void(Region*)>& visitor) const;
 
+		/**
+		 * @brief Check if control flow can reach another region
+		 * @param target Region to check reachability to
+		 * @return true if there's a control flow path from this region to target
+		 */
+		[[nodiscard]] bool can_reach(Region* target) const;
+
 	private:
 		std::vector<Region*> childs; /** @brief Children regions */
 		std::vector<Node*> ns; /** @brief Nodes the region contains */
