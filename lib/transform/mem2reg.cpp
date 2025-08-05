@@ -130,7 +130,7 @@ namespace arc
 		if (!region)
 			return nullptr;
 
-		/* create FROM*/
+		/* create FROM */
 		ach::shared_allocator<Node> alloc;
 		Node *phi = alloc.allocate(1);
 		std::construct_at(phi);
@@ -302,11 +302,13 @@ namespace arc
 			{
 				if (def_region != phi_region && definition)
 				{
-					/* check if control flow can go from def_region to phi_region */
-					if (def_region->can_reach(phi_region))
+					/* check if control flow can go from def_region to phi_region directly */
+					if (def_region->imm_predecessor_of(phi_region))
 						phi_inputs.insert(definition);
 				}
 			}
+
+			/* note: maybe crash here if phi_inputs is empty */
 
 			/* wire phi inputs */
 			phi_node->inputs.clear();
