@@ -5,12 +5,17 @@ arc_test(constfold-test
         LIBS Arc::Arc
 )
 
+arc_test(cse-test
+        SOURCES cse.cpp
+        LIBS Arc::Arc
+)
+
 arc_test(dce-test
         SOURCES dce.cpp
         LIBS Arc::Arc
 )
 
-arc_test(cse-test
-        SOURCES cse.cpp
+arc_test(m2r-test
+        SOURCES mem2reg.cpp
         LIBS Arc::Arc
 )

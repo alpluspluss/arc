@@ -519,7 +519,6 @@ namespace arc
 					std::print(os, ";\n");
 				}
 			}
-			/* removed extra newline here */
 			for (Region *child: region.children())
 				dump_regions(*child, module, os);
 		}
