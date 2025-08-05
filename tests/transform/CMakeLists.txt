@@ -15,6 +15,11 @@ arc_test(dce-test
         LIBS Arc::Arc
 )
 
+arc_test(dse-test
+        SOURCES dse.cpp
+        LIBS Arc::Arc
+)
+
 arc_test(m2r-test
         SOURCES mem2reg.cpp
         LIBS Arc::Arc

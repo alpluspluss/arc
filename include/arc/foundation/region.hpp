@@ -176,6 +176,13 @@ namespace arc
 		 */
 		[[nodiscard]] bool can_reach(Region* target) const;
 
+		/**
+		 * @brief Check if this region is an immediate predecessor of the target region
+		 * @param target Target region to check
+		 * @return true if this region directly transfers control to target
+		 */
+		bool imm_predecessor_of(const Region* target) const;
+
 	private:
 		std::vector<Region*> childs; /** @brief Children regions */
 		std::vector<Node*> ns; /** @brief Nodes the region contains */

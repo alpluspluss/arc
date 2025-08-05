@@ -4,6 +4,7 @@ arc_library(Transform SOURCES
         constfold.cpp
         cse.cpp
         dce.cpp
+        dse.cpp
         mem2reg.cpp
 )
 

@@ -48,9 +48,11 @@ namespace arc
 		if (!node)
 			return false;
 
+		/* note: skip ATOMIC_* operations as they are not
+		 * considered regular loads in this context; they are unhandled
+		 * as they have atomic effects */
 		return node->ir_type == NodeType::LOAD ||
-		       node->ir_type == NodeType::PTR_LOAD ||
-		       node->ir_type == NodeType::ATOMIC_LOAD;
+		       node->ir_type == NodeType::PTR_LOAD;
 	}
 
 	static bool is_store_op(const Node *node)
@@ -58,9 +60,11 @@ namespace arc
 		if (!node)
 			return false;
 
+		/* note: skip ATOMIC_* operations as they are not
+		 * considered regular loads in this context; they are unhandled
+		 * as they have atomic effects */
 		return node->ir_type == NodeType::STORE ||
-		       node->ir_type == NodeType::PTR_STORE ||
-		       node->ir_type == NodeType::ATOMIC_STORE;
+		       node->ir_type == NodeType::PTR_STORE;
 	}
 
 	static void collect_accesses(Node *alloc, const TypeBasedAliasResult &tbaa, AllocInfo &info)
@@ -130,7 +134,7 @@ namespace arc
 		if (!region)
 			return nullptr;
 
-		/* create FROM*/
+		/* create FROM */
 		ach::shared_allocator<Node> alloc;
 		Node *phi = alloc.allocate(1);
 		std::construct_at(phi);
@@ -302,11 +306,13 @@ namespace arc
 			{
 				if (def_region != phi_region && definition)
 				{
-					/* check if control flow can go from def_region to phi_region */
-					if (def_region->can_reach(phi_region))
+					/* check if control flow can go from def_region to phi_region directly */
+					if (def_region->imm_predecessor_of(phi_region))
 						phi_inputs.insert(definition);
 				}
 			}
+
+			/* note: maybe crash here if phi_inputs is empty */
 
 			/* wire phi inputs */
 			phi_node->inputs.clear();
