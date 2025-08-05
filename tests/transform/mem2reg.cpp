@@ -170,27 +170,28 @@ TEST_F(Mem2RegFixture, ConditionalStores)
 				auto *ptr = fb.alloc<arc::DataType::INT32>(fb.lit(1));
 				fb.store(fb.lit(0), ptr);
 
-				true_block = fb.block<arc::DataType::VOID>("true_block")([&](arc::Builder &bb)
-				{
-					bb.store(bb.lit(100), ptr);
-					return bb.ret();
-				});
-
-				false_block = fb.block<arc::DataType::VOID>("false_block")([&](arc::Builder &bb)
-				{
-					bb.store(bb.lit(200), ptr);
-					return bb.ret();
-				});
-
 				merge_block = fb.block<arc::DataType::INT32>("merge_block")([&](arc::Builder &bb)
 				{
 					auto *val = bb.load(ptr);
 					return bb.ret(val);
 				});
 
+				true_block = fb.block<arc::DataType::VOID>("true_block")([&](arc::Builder &bb)
+				{
+					bb.store(bb.lit(100), ptr);
+					bb.jump(merge_block->parent->entry());
+					return bb.ret();
+				});
+
+				false_block = fb.block<arc::DataType::VOID>("false_block")([&](arc::Builder &bb)
+				{
+					bb.store(bb.lit(200), ptr);
+					bb.jump(merge_block->parent->entry());
+					return bb.ret();
+				});
+
 				auto *condition = fb.gt(fb.lit(5), fb.lit(3));
 				fb.branch(condition, true_block->parent->entry(), false_block->parent->entry());
-				fb.jump(merge_block->parent->entry());
 				return fb.ret();
 			});
 

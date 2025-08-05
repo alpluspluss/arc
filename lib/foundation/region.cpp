@@ -456,4 +456,60 @@ namespace arc
 
 		return false;
 	}
+
+	bool Region::imm_predecessor_of(const Region *target) const
+	{
+		if (!target || this == target)
+			return false;
+
+		/* check if any control flow instruction in this region targets the target region */
+		for (const Node *node: ns)
+		{
+			switch (node->ir_type)
+			{
+				case NodeType::JUMP:
+					/* unconditional jump to target */
+					if (!node->inputs.empty() &&
+					    node->inputs[0] &&
+					    node->inputs[0]->parent == target)
+					{
+						return true;
+					}
+					break;
+
+				case NodeType::BRANCH:
+					/* either path could go to target */
+					if (node->inputs.size() >= 3)
+					{
+						if ((node->inputs[1] && node->inputs[1]->parent == target) ||
+						    (node->inputs[2] && node->inputs[2]->parent == target))
+						{
+							return true;
+						}
+					}
+					break;
+
+				case NodeType::INVOKE:
+					/* function call with exception handling */
+					if (node->inputs.size() >= 2)
+					{
+						const Node *normal_entry = node->inputs[node->inputs.size() - 2];
+						const Node *except_entry = node->inputs[node->inputs.size() - 1];
+
+						if ((normal_entry && normal_entry->parent == target) ||
+						    (except_entry && except_entry->parent == target))
+						{
+							return true;
+						}
+					}
+					break;
+
+				default:
+					/* other instructions don't transfer control */
+					break;
+			}
+		}
+
+		return false;
+	}
 }
