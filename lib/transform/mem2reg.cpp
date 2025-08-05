@@ -48,9 +48,11 @@ namespace arc
 		if (!node)
 			return false;
 
+		/* note: skip ATOMIC_* operations as they are not
+		 * considered regular loads in this context; they are unhandled
+		 * as they have atomic effects */
 		return node->ir_type == NodeType::LOAD ||
-		       node->ir_type == NodeType::PTR_LOAD ||
-		       node->ir_type == NodeType::ATOMIC_LOAD;
+		       node->ir_type == NodeType::PTR_LOAD;
 	}
 
 	static bool is_store_op(const Node *node)
@@ -58,9 +60,11 @@ namespace arc
 		if (!node)
 			return false;
 
+		/* note: skip ATOMIC_* operations as they are not
+		 * considered regular loads in this context; they are unhandled
+		 * as they have atomic effects */
 		return node->ir_type == NodeType::STORE ||
-		       node->ir_type == NodeType::PTR_STORE ||
-		       node->ir_type == NodeType::ATOMIC_STORE;
+		       node->ir_type == NodeType::PTR_STORE;
 	}
 
 	static void collect_accesses(Node *alloc, const TypeBasedAliasResult &tbaa, AllocInfo &info)
