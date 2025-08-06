@@ -24,3 +24,8 @@ arc_test(m2r-test
         SOURCES mem2reg.cpp
         LIBS Arc::Arc
 )
+
+arc_test(sroa-test
+        SOURCES sroa.cpp
+        LIBS Arc::Arc
+)
