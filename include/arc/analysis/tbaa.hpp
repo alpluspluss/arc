@@ -248,7 +248,7 @@ namespace arc
 		 * @brief Trace pointer arithmetic to find base allocation and offset
 		 * @param pointer Pointer node
 		 * @param offset Output parameter for computed offset
-		 * @return Base allocation node, or nullptr if cannot determine
+		 * @return Base allocation node, or nullptr if you cannot determine
 		 */
 		Node* trace_pointer_base(Node* pointer, std::int64_t& offset) const;
 
