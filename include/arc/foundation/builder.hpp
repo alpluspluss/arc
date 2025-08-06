@@ -499,6 +499,15 @@ namespace arc
 		{
 			opaque_node->ir_type = NodeType::FUNCTION;
 			opaque_node->type_kind = DataType::FUNCTION;
+
+			DataTraits<DataType::FUNCTION>::value fn_data;
+			ach::shared_allocator<TypedData> alloc;
+			TypedData* ret_type = alloc.allocate(1);
+			std::construct_at(ret_type);
+			set_t<ReturnType>(*ret_type);
+			fn_data.return_type = ret_type;
+			opaque_node->value.set<decltype(fn_data), DataType::FUNCTION>(fn_data);
+
 			const std::string_view func_name = builder.module.strtable().get(opaque_node->str_id);
 			Region* func_region = builder.module.create_region(func_name, builder.get_insertion_point());
 			return FunctionBuilder<ReturnType>(builder, opaque_node, func_region);
@@ -820,7 +829,7 @@ namespace arc
 			throw std::invalid_argument("lambda parameter count doesn't match declared parameters");
 
 		DataTraits<DataType::FUNCTION>::value fn_data = {};
-		ach::allocator<TypedData> alloc;
+		ach::shared_allocator<TypedData> alloc;
 		TypedData* ret_type = alloc.allocate(1);
 		std::construct_at(ret_type);
 		arc::set_t<ReturnType>(*ret_type);
@@ -845,6 +854,8 @@ namespace arc
 	{
 		Node *func_node = create_node(NodeType::FUNCTION, DataType::FUNCTION);
 		func_node->str_id = module.intern_str(name);
+		func_node->ir_type = NodeType::FUNCTION;
+		func_node->type_kind = DataType::FUNCTION;
 		module.add_fn(func_node);
 		Region *func_region = module.create_region(name, current_region);
 		return FunctionBuilder<ReturnType>(*this, func_node, func_region);
@@ -951,6 +962,9 @@ namespace arc
 		{
 			Node* func_node = create_node(NodeType::FUNCTION, DataType::FUNCTION);
 			func_node->str_id = module.intern_str(name);
+			DataTraits<DataType::FUNCTION>::value fn_data;
+			fn_data.return_type = nullptr; /* will be set later by ::function<ReturnType>() */
+			func_node->value.set<decltype(fn_data), DataType::FUNCTION>(fn_data);
 			module.add_fn(func_node);
 			return Opaque<DataType::FUNCTION>(*this, func_node);
 		}

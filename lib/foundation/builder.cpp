@@ -35,7 +35,7 @@ namespace arc
 
 		/* if this is a pointer, we need to propagate the pointee type information */
 		Node *node = create_node(NodeType::LOAD, location->type_kind);
-		if (location->type_kind == DataType::POINTER && location->value.type() == DataType::POINTER)
+		if ((location->type_kind == DataType::POINTER || location->type_kind == DataType::FUNCTION) && location->value.type() == DataType::POINTER)
 			node->value = location->value;
 		connect_inputs(node, { location });
 		return node;
@@ -248,22 +248,51 @@ namespace arc
 
 	Node *Builder::call(Node *function, const std::vector<Node *> &args)
 	{
-		if (!function)
-			throw std::invalid_argument("function cannot be null");
+	    if (!function)
+	        throw std::invalid_argument("function cannot be null");
 
-		if (function->type_kind != DataType::FUNCTION)
-			throw std::invalid_argument("call requires function type");
+	    if (function->type_kind != DataType::FUNCTION && function->type_kind != DataType::POINTER)
+	        throw std::invalid_argument(std::format("call requires function or pointer type, got {}",
+	                                 static_cast<int>(function->type_kind)));
 
-		auto& fn_data = function->value.get<DataType::FUNCTION>();
-		DataType return_type = fn_data.return_type ? fn_data.return_type->type() : DataType::VOID;
-		Node *node = create_node(NodeType::CALL, return_type);
-		if (return_type != DataType::VOID && fn_data.return_type)
-			node->value = *fn_data.return_type;
+	    DataType return_type = DataType::VOID;
+	    if (function->type_kind == DataType::FUNCTION)
+	    {
+	        auto& fn_data = function->value.get<DataType::FUNCTION>();
+	        return_type = fn_data.return_type ? fn_data.return_type->type() : DataType::VOID;
+	    }
+	    else if (function->type_kind == DataType::POINTER)
+	    {
+	        auto& ptr_data = function->value.get<DataType::POINTER>();
+	        if (ptr_data.pointee && ptr_data.pointee->type_kind == DataType::FUNCTION)
+	        {
+	            auto& fn_data = ptr_data.pointee->value.get<DataType::FUNCTION>();
+	            return_type = fn_data.return_type ? fn_data.return_type->type() : DataType::VOID;
+	        }
+	    }
 
-		std::vector<Node *> inputs = { function };
-		inputs.insert(inputs.end(), args.begin(), args.end());
-		connect_inputs(node, inputs);
-		return node;
+	    Node *node = create_node(NodeType::CALL, return_type);
+	    if (function->type_kind == DataType::FUNCTION)
+	    {
+	        auto& fn_data = function->value.get<DataType::FUNCTION>();
+	        if (return_type != DataType::VOID && fn_data.return_type)
+	            node->value = *fn_data.return_type;
+	    }
+	    else if (function->type_kind == DataType::POINTER)
+	    {
+	        auto& ptr_data = function->value.get<DataType::POINTER>();
+	        if (ptr_data.pointee && ptr_data.pointee->type_kind == DataType::FUNCTION)
+	        {
+	            auto& fn_data = ptr_data.pointee->value.get<DataType::FUNCTION>();
+	            if (return_type != DataType::VOID && fn_data.return_type)
+	                node->value = *fn_data.return_type;
+	        }
+	    }
+
+	    std::vector<Node *> inputs = { function };
+	    inputs.insert(inputs.end(), args.begin(), args.end());
+	    connect_inputs(node, inputs);
+	    return node;
 	}
 
 	Node *Builder::ret(Node *value)
@@ -445,7 +474,7 @@ namespace arc
 		if (!current_region)
 			throw std::runtime_error("no current region set for node creation");
 
-		ach::allocator<Node> alloc;
+		ach::shared_allocator<Node> alloc;
 		Node *node = alloc.allocate(1);
 		std::construct_at(node);
 		node->ir_type = type;

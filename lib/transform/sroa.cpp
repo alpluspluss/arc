@@ -135,7 +135,13 @@ namespace arc
 					if (field_index == SIZE_MAX) [[unlikely]]
 					{
 						/* mark as non-promotable because we are unable to determine the access index
-						 * this shouldn't happen at all */
+						 * this could occur in complex GEPs or non-constant indexes e.g.
+						 *
+						 * int i = e::index();
+						 * arr[i] = 42;
+						 *
+						 * it is correctly marked as non-promotable unless SCCP/constant folding
+						 * do this part. */
 						info.fully_promotable = false;
 						return;
 					}

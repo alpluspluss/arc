@@ -226,9 +226,9 @@ namespace arc
 		struct value
 		{
 			/**	@brief Pointer to a `Node` structure */
-			Node *pointee;
+			Node *pointee = nullptr;
 			/** @brief The address space of the pointer */
-			std::uint32_t addr_space;
+			std::uint32_t addr_space = {};
 			/** @brief Pointer qualifiers */
 			PtrQualifier qualifier = PtrQualifier::NONE;
 		} __attribute__((packed));
