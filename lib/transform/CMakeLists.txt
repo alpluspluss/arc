@@ -6,6 +6,7 @@ arc_library(Transform SOURCES
         dce.cpp
         dse.cpp
         mem2reg.cpp
+        sroa.cpp
 )
 
 target_link_libraries(Transform PRIVATE Threads::Threads)
