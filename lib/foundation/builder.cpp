@@ -574,6 +574,7 @@ namespace arc
 		struct_data.fields = std::move(final_fields);
 		TypedData type_def;
 		type_def.set<decltype(struct_data), DataType::STRUCT>(std::move(struct_data));
+		builder.module.add_t(builder.module.strtable().get(struct_data.name).data(), type_def);
 		return type_def;
 	}
 

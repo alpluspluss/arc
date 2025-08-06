@@ -5,7 +5,6 @@
 #include <arc/foundation/module.hpp>
 #include <arc/foundation/node.hpp>
 #include <arc/foundation/region.hpp>
-#include <arc/support/allocator.hpp>
 #include <arc/support/inference.hpp>
 
 namespace arc
@@ -17,7 +16,7 @@ namespace arc
 		return infer_primitive_types(type1, type2) != DataType::VOID;
 	}
 
-	Node* access_ptr(Node* access)
+	Node *access_ptr(Node *access)
 	{
 		switch (access->ir_type)
 		{
@@ -61,7 +60,7 @@ namespace arc
 		return TBAAResult::MAY_ALIAS;
 	}
 
-	bool TypeBasedAliasResult::update(const std::vector<Region*>&)
+	bool TypeBasedAliasResult::update(const std::vector<Region *> &)
 	{
 		/* note: TBAA analysis is based on allocation sites and type information
 		 * which should never change during optimization passes
@@ -71,7 +70,7 @@ namespace arc
 		return true;
 	}
 
-	TBAAResult TypeBasedAliasResult::alias(Node* access1, Node* access2) const
+	TBAAResult TypeBasedAliasResult::alias(Node *access1, Node *access2) const
 	{
 		if (!access1 || !access2)
 			return TBAAResult::MAY_ALIAS;
@@ -81,13 +80,13 @@ namespace arc
 			return TBAAResult::MUST_ALIAS;
 
 		/* if we can't determine location info, be conservative */
-		const MemoryLocation* loc1 = memory_location(access1);
-		const MemoryLocation* loc2 = memory_location(access2);
+		const MemoryLocation *loc1 = memory_location(access1);
+		const MemoryLocation *loc2 = memory_location(access2);
 		if (!loc1 || !loc2)
 			return TBAAResult::MAY_ALIAS;
 
-		Node* ptr1 = access_ptr(access1);
-		Node* ptr2 = access_ptr(access2);
+		Node *ptr1 = access_ptr(access1);
+		Node *ptr2 = access_ptr(access2);
 		if ((ptr1 && is_restrict_pointer(ptr1)) || (ptr2 && is_restrict_pointer(ptr2)))
 		{
 			if (ptr1 != ptr2)
@@ -105,7 +104,7 @@ namespace arc
 		if (loc1->allocation_site != loc2->allocation_site)
 		{
 			if (loc1->allocation_site && loc2->allocation_site &&
-				!has_escaped(loc1->allocation_site) && !has_escaped(loc2->allocation_site))
+			    !has_escaped(loc1->allocation_site) && !has_escaped(loc2->allocation_site))
 			{
 				return TBAAResult::NO_ALIAS; /* different non-escaped locals never alias */
 			}
@@ -117,7 +116,7 @@ namespace arc
 			{
 				if (!types_compatible(loc1->access_type, loc2->access_type))
 					return TBAAResult::NO_ALIAS; /* different types definitely don't alias */
-				return TBAAResult::MAY_ALIAS; /* same type may alias */
+				return TBAAResult::MAY_ALIAS;    /* same type may alias */
 			}
 
 			/* different allocation sites with incompatible types definitely don't alias */
@@ -133,7 +132,7 @@ namespace arc
 		return check_memory_overlap(*loc1, *loc2);
 	}
 
-	void TypeBasedAliasResult::add_memory_access(Node* access, const MemoryLocation& location)
+	void TypeBasedAliasResult::add_memory_access(Node *access, const MemoryLocation &location)
 	{
 		if (!access)
 			return;
@@ -142,13 +141,13 @@ namespace arc
 		mem_accesses.push_back(access);
 	}
 
-	const MemoryLocation* TypeBasedAliasResult::memory_location(Node* access) const
+	const MemoryLocation *TypeBasedAliasResult::memory_location(Node *access) const
 	{
 		const auto it = access_locations.find(access);
 		return (it != access_locations.end()) ? &it->second : nullptr;
 	}
 
-	void TypeBasedAliasResult::add_allocation_site(Node* alloc_node, std::uint64_t size)
+	void TypeBasedAliasResult::add_allocation_site(Node *alloc_node, std::uint64_t size)
 	{
 		if (!alloc_node)
 			return;
@@ -157,12 +156,12 @@ namespace arc
 		allocation_sizes[alloc_node] = size;
 	}
 
-	bool TypeBasedAliasResult::is_allocation_site(Node* node) const
+	bool TypeBasedAliasResult::is_allocation_site(Node *node) const
 	{
 		return allocation_sites.contains(node);
 	}
 
-	const std::vector<Node*>& TypeBasedAliasResult::memory_accesses() const
+	const std::vector<Node *> &TypeBasedAliasResult::memory_accesses() const
 	{
 		return mem_accesses;
 	}
@@ -188,23 +187,23 @@ namespace arc
 		return {};
 	}
 
-	Analysis* TypeBasedAliasAnalysisPass::run(const Module& module)
+	Analysis *TypeBasedAliasAnalysisPass::run(const Module &module)
 	{
-		auto* result = allocate_result<TypeBasedAliasResult>();
-		for (Node* func : module.functions())
+		auto *result = allocate_result<TypeBasedAliasResult>();
+		for (Node *func: module.functions())
 		{
 			if (func->ir_type == NodeType::FUNCTION)
-				analyze_function(result, func, const_cast<Module&>(module));
+				analyze_function(result, func, const_cast<Module &>(module));
 		}
 		return result;
 	}
 
-	void TypeBasedAliasAnalysisPass::analyze_function(TypeBasedAliasResult* result, Node* func, Module& module)
+	void TypeBasedAliasAnalysisPass::analyze_function(TypeBasedAliasResult *result, Node *func, Module &module)
 	{
 		const std::string_view func_name = module.strtable().get(func->str_id);
 
 		/* find the function's region */
-		for (Region* child : module.root()->children())
+		for (Region *child: module.root()->children())
 		{
 			if (child->name() == func_name)
 			{
@@ -214,21 +213,21 @@ namespace arc
 		}
 	}
 
-	void TypeBasedAliasAnalysisPass::analyze_region(TypeBasedAliasResult* result, Region* region) // NOLINT(*-no-recursion)
+	void TypeBasedAliasAnalysisPass::analyze_region(TypeBasedAliasResult *result, Region *region) // NOLINT(*-no-recursion)
 	{
 		if (!region)
 			return;
 
 		/* analyze all nodes in this region */
-		for (Node* node : region->nodes())
+		for (Node *node: region->nodes())
 			analyze_node(result, node);
 
 		/* recursively analyze child regions */
-		for (Region* child : region->children())
+		for (Region *child: region->children())
 			analyze_region(result, child);
 	}
 
-	void TypeBasedAliasAnalysisPass::analyze_node(TypeBasedAliasResult* result, Node* node)
+	void TypeBasedAliasAnalysisPass::analyze_node(TypeBasedAliasResult *result, Node *node)
 	{
 		if (!node)
 			return;
@@ -239,7 +238,8 @@ namespace arc
 			{
 				/* get allocation size from count parameter */
 				std::uint64_t count = 1;
-				if (Node* count_node = node->inputs[0]; count_node->ir_type == NodeType::LIT)
+				if (Node *count_node = node->inputs[0];
+					count_node->ir_type == NodeType::LIT)
 					count = static_cast<std::uint64_t>(extract_literal_value(count_node));
 
 				std::uint64_t elem_size = elem_sz(node->type_kind);
@@ -262,11 +262,11 @@ namespace arc
 			/* i = 1 because we skip the function itself */
 			for (std::size_t i = 1; i < node->inputs.size(); ++i)
 			{
-				if (Node* arg = node->inputs[i];
+				if (Node *arg = node->inputs[i];
 					arg->type_kind == DataType::POINTER)
 				{
 					std::int64_t dummy_offset = 0;
-					if (Node* allocation = trace_pointer_base(arg, dummy_offset))
+					if (Node *allocation = trace_pointer_base(arg, dummy_offset))
 					{
 						if (!is_const_pointer(arg))
 							result->mark_escaped(allocation);
@@ -279,7 +279,7 @@ namespace arc
 			if (!node->inputs.empty() && node->inputs[0]->type_kind == DataType::POINTER)
 			{
 				std::int64_t dummy_offset = 0;
-				if (Node* allocation = trace_pointer_base(node->inputs[0], dummy_offset))
+				if (Node *allocation = trace_pointer_base(node->inputs[0], dummy_offset))
 					result->mark_escaped(allocation);
 			}
 		}
@@ -287,14 +287,14 @@ namespace arc
 			handle_memory_access(result, node);
 	}
 
-	void TypeBasedAliasAnalysisPass::handle_memory_access(TypeBasedAliasResult* result, Node* node)
+	void TypeBasedAliasAnalysisPass::handle_memory_access(TypeBasedAliasResult *result, Node *node)
 	{
 		if (node->ir_type == NodeType::STORE || node->ir_type == NodeType::PTR_STORE)
 		{
 			if (!node->inputs.empty() && node->inputs[0]->type_kind == DataType::POINTER)
 			{
 				std::int64_t dummy_offset = 0;
-				if (Node* allocation = trace_pointer_base(node->inputs[0], dummy_offset))
+				if (Node *allocation = trace_pointer_base(node->inputs[0], dummy_offset))
 					result->mark_escaped(allocation);
 			}
 		}
@@ -303,7 +303,7 @@ namespace arc
 			result->add_memory_access(node, location);
 	}
 
-	MemoryLocation TypeBasedAliasAnalysisPass::compute_memory_location(Node* node) const
+	MemoryLocation TypeBasedAliasAnalysisPass::compute_memory_location(Node *node) const
 	{
 		MemoryLocation location;
 		bool is_global = node->parent && node->parent->parent() == nullptr;
@@ -316,8 +316,9 @@ namespace arc
 				{
 					location.allocation_site = nullptr;
 					location.offset = -1;
-					location.access_type = (node->ir_type == NodeType::STORE) ?
-										  node->inputs[0]->type_kind : node->type_kind;
+					location.access_type = (node->ir_type == NodeType::STORE)
+						                       ? node->inputs[0]->type_kind
+						                       : node->type_kind;
 					location.size = elem_sz(location.access_type);
 					break;
 				}
@@ -325,13 +326,14 @@ namespace arc
 				/* direct access to named location */
 				if (!node->inputs.empty())
 				{
-					Node* target = (node->ir_type == NodeType::STORE) ? node->inputs[1] : node->inputs[0];
+					Node *target = (node->ir_type == NodeType::STORE) ? node->inputs[1] : node->inputs[0];
 
 					std::int64_t offset = 0;
 					location.allocation_site = trace_pointer_base(target, offset);
 					location.offset = offset;
-					location.access_type = (node->ir_type == NodeType::STORE) ?
-					                      node->inputs[0]->type_kind : node->type_kind;
+					location.access_type = (node->ir_type == NodeType::STORE)
+						                       ? node->inputs[0]->type_kind
+						                       : node->type_kind;
 					location.size = elem_sz(location.access_type);
 				}
 				break;
@@ -343,7 +345,7 @@ namespace arc
 			case NodeType::ATOMIC_STORE:
 			{
 				/* pointer-based access */
-				Node* pointer = nullptr;
+				Node *pointer = nullptr;
 				if (node->ir_type == NodeType::PTR_STORE || node->ir_type == NodeType::ATOMIC_STORE)
 				{
 					if (node->inputs.size() >= 2)
@@ -363,7 +365,7 @@ namespace arc
 					location.offset = offset;
 					if (pointer->type_kind == DataType::POINTER && pointer->value.type() == DataType::POINTER)
 					{
-						const auto&[pointee, addr_space, qual] = pointer->value.get<DataType::POINTER>();
+						const auto &[pointee, addr_space, qual] = pointer->value.get<DataType::POINTER>();
 						if (pointee)
 							location.access_type = pointee->type_kind;
 					}
@@ -379,9 +381,9 @@ namespace arc
 		return location;
 	}
 
-	Node* TypeBasedAliasAnalysisPass::trace_pointer_base(Node* pointer, std::int64_t& offset) const // NOLINT(*-no-recursion)
+	Node *TypeBasedAliasAnalysisPass::trace_pointer_base(Node *pointer, std::int64_t &offset) const // NOLINT(*-no-recursion)
 	{
-		Node* current = pointer;
+		Node *current = pointer;
 		while (current)
 		{
 			switch (current->ir_type)
@@ -398,8 +400,8 @@ namespace arc
 				case NodeType::PTR_ADD:
 					if (current->inputs.size() >= 2)
 					{
-						Node* base = current->inputs[0];
-						if (Node* offset_node = current->inputs[1];
+						Node *base = current->inputs[0];
+						if (Node *offset_node = current->inputs[1];
 							offset_node->ir_type == NodeType::LIT)
 						{
 							const std::int64_t add_offset = extract_literal_value(offset_node);
@@ -414,48 +416,51 @@ namespace arc
 					/* struct field or array index access */
 					if (current->inputs.size() >= 2)
 					{
-						Node* container = current->inputs[0];
-						Node* index_node = current->inputs[1];
+						Node *container = current->inputs[0];
+						Node *index_node = current->inputs[1];
 						if (index_node->ir_type == NodeType::LIT)
 						{
 							if (container->type_kind == DataType::STRUCT)
 							{
-								auto fi = extract_literal_value(index_node);
+								auto logical_field_index = extract_literal_value(index_node);
 								if (container->value.type() != DataType::STRUCT)
 									throw std::runtime_error("struct node missing type information");
 
-								const auto& struct_data = container->value.get<DataType::STRUCT>();
+								const auto &struct_data = container->value.get<DataType::STRUCT>();
 								std::uint64_t offset_accumulator = 0;
-								std::uint32_t actual_field_count = 0;
-								auto& m = index_node->parent->module(); /* note: hacky but works */
-								for (const auto& [name_id, field_type, field_data] : struct_data.fields)
+								std::size_t current_logical_index = 0;
+								auto &m = index_node->parent->module(); /* note: hacky but works */
+
+								for (const auto &[name_id, field_type, field_data]: struct_data.fields)
 								{
 									std::string field_name(m.strtable().get(name_id));
 									if (field_name.starts_with("__pad"))
 									{
+										/* add to offset but don't increment logical index */
 										offset_accumulator += elem_sz(field_type);
 										continue;
 									}
 
-									if (actual_field_count == fi)
+									if (current_logical_index == logical_field_index)
 									{
 										offset += offset_accumulator;
 										break;
 									}
 
 									offset_accumulator += elem_sz(field_type);
-									actual_field_count++;
+									current_logical_index++;
 								}
 
-								if (actual_field_count <= fi)
+								if (current_logical_index > logical_field_index)
 									throw std::runtime_error("struct field index out of bounds");
 							}
 							else if (container->type_kind == DataType::ARRAY)
 							{
+								/* array indexing remains unchanged */
 								const auto array_index = extract_literal_value(index_node);
 								if (container->value.type() == DataType::ARRAY)
 								{
-									const auto& arr_data = container->value.get<DataType::ARRAY>();
+									const auto &arr_data = container->value.get<DataType::ARRAY>();
 									const std::uint64_t elem_size = elem_sz(arr_data.elem_type);
 									offset += array_index * elem_size;
 								}
@@ -493,7 +498,7 @@ namespace arc
 		return nullptr;
 	}
 
-	std::int64_t TypeBasedAliasAnalysisPass::extract_literal_value(Node* node)
+	std::int64_t TypeBasedAliasAnalysisPass::extract_literal_value(Node *node)
 	{
 		if (!node || node->ir_type != NodeType::LIT)
 			return 0;
@@ -521,7 +526,7 @@ namespace arc
 		}
 	}
 
-	bool TypeBasedAliasAnalysisPass::is_memory_access(Node* node)
+	bool TypeBasedAliasAnalysisPass::is_memory_access(Node *node)
 	{
 		switch (node->ir_type)
 		{
