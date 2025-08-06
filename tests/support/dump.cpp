@@ -374,7 +374,6 @@ TEST_F(DumpFixture, StructTypes)
 		.field("is_student", arc::DataType::BOOL)
 		.build();
 
-	module->add_t("Person", person_type);
 	builder->function<arc::DataType::VOID>("struct_test")
 		.body([&](arc::Builder &fb)
 		{
@@ -422,8 +421,6 @@ TEST_F(DumpFixture, BasicStructDump)
         .field("y", arc::DataType::FLOAT32)
         .build();
 
-    module->add_t("Point", point_type);
-
     builder->function<arc::DataType::VOID>("struct_basic")
         .body([&](arc::Builder &fb)
         {
@@ -450,8 +447,6 @@ TEST_F(DumpFixture, SelfReferentialStructDump)
         .field("data", arc::DataType::INT32)
         .self_ptr("next")
         .build();
-
-    module->add_t("ListNode", node_type);
 
     builder->function<arc::DataType::VOID>("linked_list")
         .body([&](arc::Builder &fb)
@@ -484,8 +479,6 @@ TEST_F(DumpFixture, ComplexRecursiveStructDump)
         .self_ptr("parent")
         .field("depth", arc::DataType::UINT32)
         .build();
-
-    module->add_t("TreeNode", tree_type);
 
     builder->function<arc::DataType::VOID>("binary_tree")
         .body([&](arc::Builder &fb)
@@ -528,8 +521,6 @@ TEST_F(DumpFixture, PackedStructDump)
         .packed()
         .build();
 
-    module->add_t("PackedData", packed_type);
-
     builder->function<arc::DataType::VOID>("packed_struct")
         .body([&](arc::Builder &fb)
         {
@@ -568,9 +559,6 @@ TEST_F(DumpFixture, NestedStructDump)
         .self_ptr("spouse")
         .build();
 
-    module->add_t("Address", address_type);
-    module->add_t("Person", person_type);
-
     builder->function<arc::DataType::VOID>("nested_struct")
         .body([&](arc::Builder &fb)
         {
@@ -601,8 +589,6 @@ TEST_F(DumpFixture, StructWithPointersDump)
 		.field_ptr("nullable_ptr", nullptr)
 		.self_ptr("next", 1)
 		.build();
-
-	module->add_t("Wrapper", wrapper_type);
 
 	builder->function<arc::DataType::VOID>("pointer_struct")
 		.body([&](arc::Builder &fb)
@@ -644,10 +630,6 @@ TEST_F(DumpFixture, MultipleStructTypesDump)
         .field("active_lists", arc::DataType::UINT32)
         .field_ptr("primary_list", nullptr) /* forward ref to List */
         .build();
-
-    module->add_t("Node", node_type);
-    module->add_t("List", list_type);
-    module->add_t("Manager", manager_type);
 
     builder->function<arc::DataType::VOID>("multiple_structs")
         .body([&](arc::Builder &fb)
