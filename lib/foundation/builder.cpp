@@ -33,33 +33,55 @@ namespace arc
 		if (!location)
 			throw std::invalid_argument("load location cannot be null");
 
-		/* infer what type we're loading by tracing back through use-def chains */
+		/* determine what type we're loading based on the memory location type.
+		 * Arc supports two main loading patterns: direct field access from structs
+		 * and indirect access through stored pointers/values */
 		DataType result_type = location->type_kind;
-		Node* stored_value = nullptr;
-		for (Node* user : location->users)
+		Node *type_source = nullptr;
+
+		/* struct field access uses the field's declared type from the type system.
+		 * the ACCESS node already contains complete type information including
+		 * pointer metadata, so we don't need to chase use-def chains */
+		if (location->ir_type == NodeType::ACCESS)
 		{
-			if (user->ir_type == NodeType::ALLOC)
+			result_type = location->type_kind;
+			type_source = location;
+		}
+		else
+		{
+			/* memory location access requires finding what was stored there.
+			 * we trace through the use-def chain to find either the original
+			 * allocation type or the most recent store operation */
+			for (Node *user: location->users)
 			{
-				result_type = user->type_kind;
-				break;
-			}
-			/* find what was stored to this location to get the actual type and metadata */
-			if ((user->ir_type == NodeType::STORE || user->ir_type == NodeType::PTR_STORE) &&
-				user->inputs.size() >= 2 && user->inputs[1] == location)
-			{
-				result_type = user->inputs[0]->type_kind;
-				stored_value = user->inputs[0];  /* remember what was stored */
-				break;
+				if (user->ir_type == NodeType::ALLOC)
+				{
+					/* allocation determines the base type of the storage location */
+					result_type = user->type_kind;
+					break;
+				}
+				if ((user->ir_type == NodeType::STORE || user->ir_type == NodeType::PTR_STORE) &&
+				    user->inputs.size() >= 2 && user->inputs[1] == location)
+				{
+					/* store operation determines the actual value type and metadata */
+					result_type = user->inputs[0]->type_kind;
+					type_source = user->inputs[0];
+					break;
+				}
 			}
 		}
 
 		Node *node = create_node(NodeType::LOAD, result_type);
 
-		/* copy metadata from the stored value, not the storage location */
-		if (stored_value && (result_type == DataType::POINTER || result_type == DataType::FUNCTION))
+		/* preserve complex type metadata for pointer and function types.
+		 * this ensures that loading a function pointer retains signature information
+		 * and loading a data pointer retains pointee type for alias analysis */
+		if (type_source && (result_type == DataType::POINTER || result_type == DataType::FUNCTION))
 		{
-			if (stored_value->value.type() != DataType::VOID)
-				node->value = stored_value->value;
+			if (type_source->value.type() != DataType::VOID)
+			{
+				node->value = type_source->value;
+			}
 		}
 
 		connect_inputs(node, { location });
