@@ -132,6 +132,17 @@ CAST<FLOAT64>[INT64]  /* converts to nearest representable double */
 CAST<ptr_to_uint8>[ptr_to_int32]  /* same address, different pointee type */
 ```
 
+## Call Semantics
+
+The `CALL` node uses types to determine both direct and indirect call (function pointer) semantics.
+
+For direct calls, the function operand must be a function type. For indirect calls, 
+the function operand has `DataType::POINTER` with `pointee->type_kind == DataType::FUNCTION`.
+
+The call node's type_kind field stores the return type extracted from the function signature. 
+No additional type metadata shall be stored in the call node's value field as the function
+node itself maintains all signature information.
+
 ## Memory Operation Semantics
 
 ### Load/Store Size Determination
@@ -167,7 +178,7 @@ The `FROM` node represents value merging at control flow join points, typically 
 construction (SROA/Mem2Reg). All source operands must have identical types.
 
 ```cpp
-/* Example: Variable promoted from memory to register */
+/* example: Variable promoted from memory to register */
 %result = i32 FROM [%else_value, %then_value]    /* order doesn't matter */
 %result = i32 FROM [%then_value, %else_value]    /* equivalent */
 ```
@@ -179,9 +190,9 @@ construction (SROA/Mem2Reg). All source operands must have identical types.
 Operations that violate type compatibility rules should be rejected.
 
 ```cpp
-ADD[ptr_to_int32, ptr_to_float]    /* ERROR - pointer arithmetic between different types */
-LOAD[FUNCTION]                     /* ERROR - cannot load from function type */
-PTR_STORE[value, INT32]            /* ERROR - cannot store through non-pointer */
+ADD[ptr_to_int32, ptr_to_float]    /* ERROR: pointer arithmetic between different types */
+LOAD[FUNCTION]                     /* ERROR: cannot load from function type */
+PTR_STORE[value, INT32]            /* ERROR: cannot store through non-pointer */
 ```
 
 ### Vector Constraint Violations
@@ -189,8 +200,8 @@ PTR_STORE[value, INT32]            /* ERROR - cannot store through non-pointer *
 Vector operations must satisfy dimensional and type constraints.
 
 ```cpp
-VECTOR_EXTRACT[vector<4 x float>, 5]  /* ERROR - index out of bounds */
-ADD[vector<3 x int>, vector<4 x int>] /* ERROR - mismatched vector dimensions */
+VECTOR_EXTRACT[vector<4 x float>, 5]  /* ERROR: index out of bounds */
+ADD[vector<3 x int>, vector<4 x int>] /* ERROR: mismatched vector dimensions */
 ```
 
 These semantic conventions try to ensure consistency across all Arc IR operations.
