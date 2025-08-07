@@ -302,19 +302,29 @@ TEST_F(CallGraphFixture, IndirectCallThroughPointer)
 				return fb.ret(fb.lit(100));
 			});
 
+	arc::Node *real_call_node = nullptr;
 	arc::Node *indirect_call = builder->function<arc::DataType::INT32>("caller")
 			.body([&](arc::Builder &fb)
 			{
 				auto *func_ptr_storage = fb.alloc<arc::DataType::FUNCTION>(fb.lit(1));
-				fb.store(target_func, func_ptr_storage);
+				auto *func_addr = fb.addr_of(target_func);
+				fb.store(func_addr, func_ptr_storage);
 				auto *func_ptr = fb.load(func_ptr_storage);
-				indirect_call = fb.call(func_ptr);
-				return fb.ret(indirect_call);
+				real_call_node = fb.call(func_ptr);
+				return fb.ret(real_call_node);
 			});
 
 	auto &cga = run_cga();
 	EXPECT_EQ(cga.callee(indirect_call), nullptr);
-	auto targets = cga.targets(indirect_call);
+	std::println("DEBUG: Expected target_func pointer: {}", static_cast<void*>(target_func));
+	std::println("DEBUG: Test calling targets() with call_site: {}", static_cast<void*>(indirect_call));
+	auto targets = cga.targets(real_call_node);
+	std::println("DEBUG: Found {} targets", targets.size());
+	for (auto* t : targets)
+	{
+		std::println("DEBUG: Target pointer: {}", static_cast<void*>(t));
+	}
+
 	EXPECT_TRUE(std::ranges::find(targets, target_func) != targets.end());
 
 	std::println("indirect call through pointer: passed");

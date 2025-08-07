@@ -51,7 +51,7 @@ namespace arc
 			{
 				if (edge.callee)
 				{
-					/* found a resolved call edge - collect all callees for this site.
+					/* found a resolved call edge; we collect all callees for this site.
 					 * there might be multiple edges for the same call site if it's
 					 * an indirect call with multiple possible targets */
 					std::vector<Node *> result;
@@ -151,9 +151,11 @@ namespace arc
 		if (extern_functions.contains(func))
 			return true;
 
-		if (auto it = param_info.find({ func, param_idx });
+		if (const auto it = param_info.find({ func, param_idx });
 			it != param_info.end())
+		{
 			return it->second.escapes;
+		}
 
 		/* if no parameter info is recorded, assume the parameter escapes to be safe.
 		 * this can happen for malformed IR or functions that weren't fully analyzed */
@@ -251,7 +253,7 @@ namespace arc
 			{
 				if (node->ir_type == NodeType::CALL || node->ir_type == NodeType::INVOKE)
 				{
-					analyze_call_site(result, node, func);
+					analyze_call_site(result, node, func, module);
 
 					/* track which function contains each call site for reverse lookups */
 					result->call_site_to_function[node] = func;
@@ -261,7 +263,7 @@ namespace arc
 		});
 	}
 
-	void CallGraphAnalysisPass::analyze_call_site(CallGraphResult *result, Node *call_node, Node *containing_func)
+	void CallGraphAnalysisPass::analyze_call_site(CallGraphResult *result, Node *call_node, Node *containing_func, Module& module)
 	{
 		if (call_node->inputs.empty())
 			return;
@@ -278,7 +280,7 @@ namespace arc
 			/* indirect call through a function pointer. we need to chase the pointer
 			 * to find all possible target functions */
 			std::unordered_set<Node *> visited;
-			std::vector<Node *> targets = chase_function_pointer(callee_operand, visited);
+			std::vector<Node *> targets = chase_function_pointer(callee_operand, visited, module);
 			for (Node *target: targets)
 			{
 				if (target && target->ir_type == NodeType::FUNCTION)
@@ -302,12 +304,11 @@ namespace arc
 	}
 
 	std::vector<Node *> CallGraphAnalysisPass::chase_function_pointer(Node *pointer_node,
-	                                                                  std::unordered_set<Node *> &visited)
+	                                                                  std::unordered_set<Node *> &visited, Module& module)
 	{
 		if (!pointer_node || visited.contains(pointer_node))
 			return {};
 
-		visited.insert(pointer_node);
 		std::unordered_set<Node *> functions;
 
 		/* fast path optimization using Arc's pointer qualifiers. const+restrict pointers
@@ -336,7 +337,7 @@ namespace arc
 					if (user->ir_type == NodeType::PTR_STORE && user->inputs.size() >= 2 &&
 					    user->inputs[1] == pointer_node)
 					{
-						chase_pointer_def(user->inputs[0], functions, visited);
+						chase_pointer_def(user->inputs[0], functions, visited, module);
 					}
 				}
 				return { functions.begin(), functions.end() };
@@ -344,18 +345,17 @@ namespace arc
 		}
 
 		/* general case: full pointer chasing through Arc's use-def chains */
-		chase_pointer_def(pointer_node, functions, visited);
+		chase_pointer_def(pointer_node, functions, visited, module);
 		return { functions.begin(), functions.end() };
 	}
 
 	void CallGraphAnalysisPass::chase_pointer_def(Node *node, std::unordered_set<Node *> &functions, // NOLINT(*-no-recursion)
-	                                              std::unordered_set<Node *> &visited)
+	                                              std::unordered_set<Node *> &visited, Module& module)
 	{
 		if (!node || visited.contains(node))
 			return;
 
 		visited.insert(node);
-
 		switch (node->ir_type)
 		{
 			case NodeType::FUNCTION:
@@ -363,11 +363,18 @@ namespace arc
 				functions.insert(node);
 				break;
 
+			case NodeType::ADDR_OF:
+				/* address-of function creates function pointer to the given function.
+				 * this is a common pattern in systems programming where we take the address of a function
+				 * to pass it around as a pointer */
+				if (!node->inputs.empty() && node->inputs[0]->ir_type == NodeType::FUNCTION)
+					functions.insert(node->inputs[0]);
+				break;
 			case NodeType::LOAD:
 			case NodeType::PTR_LOAD:
 				/* loading from memory needs to find what was stored there.
 				 * this is where the real complexity of pointer analysis lives */
-				chase_memory_location(node, functions, visited);
+				chase_memory_location(node, functions, visited, module);
 				break;
 
 			case NodeType::PARAM:
@@ -383,22 +390,16 @@ namespace arc
 				{
 					/* find the function this parameter belongs to and then look at
 					 * all call sites to see what gets passed for this parameter */
-					for (Node *func_node: func_region->nodes())
+					if (Node* owner_func = find_function_for_region(func_region, module))
 					{
-						if (func_node->ir_type == NodeType::FUNCTION)
+						std::size_t param_idx = find_parameter_index(owner_func, node);
+						for (Node *caller: owner_func->users)
 						{
-							std::size_t param_idx = find_parameter_index(func_node, node);
-
-							/* examine all callers to see what they pass for this parameter */
-							for (Node *caller: func_node->users)
+							if ((caller->ir_type == NodeType::CALL || caller->ir_type == NodeType::INVOKE) &&
+								caller->inputs.size() > param_idx + 1)
 							{
-								if ((caller->ir_type == NodeType::CALL || caller->ir_type == NodeType::INVOKE) &&
-								    caller->inputs.size() > param_idx + 1)
-								{
-									chase_pointer_def(caller->inputs[param_idx + 1], functions, visited);
-								}
+								chase_pointer_def(caller->inputs[param_idx + 1], functions, visited, module);
 							}
-							break;
 						}
 					}
 				}
@@ -410,18 +411,18 @@ namespace arc
 				 * this is common at control flow join points where different branches
 				 * might assign different functions to the same pointer */
 				for (Node *input: node->inputs)
-					chase_pointer_def(input, functions, visited);
+					chase_pointer_def(input, functions, visited, module);
 				break;
 
 			case NodeType::CAST:
 				/* follow through to the original pointer. this is common
 				 * when casting between different function pointer types */
 				if (!node->inputs.empty())
-					chase_pointer_def(node->inputs[0], functions, visited);
+					chase_pointer_def(node->inputs[0], functions, visited, module);
 				break;
 
 			default:
-				/* unknown definition source - be conservative and assume any exported
+				/* unknown definition source; just assume any exported
 				 * function could be the target since we can't track this precisely */
 				for (Node *func: visited)
 				{
@@ -436,18 +437,18 @@ namespace arc
 	}
 
 	void CallGraphAnalysisPass::chase_memory_location(Node *load_node, std::unordered_set<Node *> &functions, // NOLINT(*-no-recursion)
-	                                                  std::unordered_set<Node *> &visited)
+	                                                  std::unordered_set<Node *> &visited, Module& module)
 	{
 		Node *address = nullptr;
 		if ((load_node->ir_type == NodeType::LOAD || load_node->ir_type == NodeType::PTR_LOAD) && !load_node->inputs.empty())
 			address = load_node->inputs[0];
 
 		if (address)
-			find_stores_to_location(address, functions, visited);
+			find_stores_to_location(address, functions, visited, module);
 	}
 
 	void CallGraphAnalysisPass::find_stores_to_location(Node *location, std::unordered_set<Node *> &functions, // NOLINT(*-no-recursion)
-	                                                    std::unordered_set<Node *> &visited)
+	                                                    std::unordered_set<Node *> &visited, Module& module)
 	{
 		/* look for all STORE operations that write to this memory location.
 		 * this is where we connect the dots between function pointer assignments
@@ -457,101 +458,110 @@ namespace arc
 			if (user->ir_type == NodeType::STORE && user->inputs.size() >= 2)
 			{
 				if (user->inputs[1] == location)
-					chase_pointer_def(user->inputs[0], functions, visited);
+					chase_pointer_def(user->inputs[0], functions, visited, module);
 			}
 			else if (user->ir_type == NodeType::PTR_STORE && user->inputs.size() >= 2)
 			{
 				if (user->inputs[1] == location)
-					chase_pointer_def(user->inputs[0], functions, visited);
+					chase_pointer_def(user->inputs[0], functions, visited, module);
 			}
+		}
+
+		if (location->ir_type == NodeType::ADDR_OF && !location->inputs.empty())
+		{
+			/* if the location is an address-of operation, we need to find all stores
+			 * to the original pointer definition to find where it was assigned */
+			Node* alloc_site = location->inputs[0];
+			find_stores_to_location(alloc_site, functions, visited, module);
 		}
 	}
 
 	void CallGraphAnalysisPass::analyze_parameter_flow(CallGraphResult *result, Module &module)
 	{
-		/* analyze how parameters flow through functions to determine escapement.
-		 * a parameter escapes if it can be observed outside the function through
-		 * returns, stores to global memory, or passing to other functions that
-		 * might let it escape */
-		for (Node *func: module.functions())
-		{
-			if (func->ir_type != NodeType::FUNCTION)
-				continue;
+	    /* analyze how parameters flow through functions to determine escapement.
+	     * a parameter escapes if it can be observed outside the function through
+	     * returns, stores to global memory, or passing to other functions that
+	     * might let it escape */
+	    for (Node *func: module.functions())
+	    {
+	        if (func->ir_type != NodeType::FUNCTION)
+	            continue;
 
-			Region *func_region = find_function_region(func, module);
-			if (!func_region)
-				continue;
+	        Region *func_region = find_function_region(func, module);
+	        if (!func_region)
+	            continue;
 
-			std::size_t param_idx = 0;
+	        /* parameters are stored in the function's inputs list, not as separate
+	         * nodes in the region. each input represents a parameter in declaration order */
+	        for (std::size_t param_idx = 0; param_idx < func->inputs.size(); ++param_idx)
+	        {
+	            Node *param_node = func->inputs[param_idx];
+	            if (!param_node || param_node->ir_type != NodeType::PARAM)
+	                continue;
 
-			for (Node *node: func_region->nodes())
-			{
-				if (node->ir_type == NodeType::PARAM)
-				{
-					ParamInfo info;
-					info.escapes = parameter_escapes_analysis(node);
-					info.read_only = true;
+	            ParamInfo info;
+	            info.escapes = parameter_escapes_analysis(param_node);
+	            info.read_only = true;
 
-					/* check if parameter is ever modified within the function */
-					for (Node *user: node->users)
-					{
-						if (user->ir_type == NodeType::STORE || user->ir_type == NodeType::PTR_STORE)
-						{
-							if (user->inputs.size() >= 2 && user->inputs[1] == node)
-							{
-								info.read_only = false;
-								break;
-							}
-						}
-					}
+	            /* check if parameter is ever modified within the function */
+	            for (Node *user: param_node->users)
+	            {
+	                if (user->ir_type == NodeType::STORE || user->ir_type == NodeType::PTR_STORE)
+	                {
+	                    if (user->inputs.size() >= 2 && user->inputs[1] == param_node)
+	                    {
+	                        info.read_only = false;
+	                        break;
+	                    }
+	                }
+	            }
 
-					/* collect specific nodes that cause this parameter to escape */
-					for (Node *user: node->users)
-					{
-						bool causes_escape = false;
+	            /* collect specific nodes that cause this parameter to escape */
+	            for (Node *user: param_node->users)
+	            {
+	                bool causes_escape = false;
 
-						switch (user->ir_type)
-						{
-							case NodeType::RET:
-								if (!user->inputs.empty() && user->inputs[0] == node)
-									causes_escape = true;
-								break;
+	                switch (user->ir_type)
+	                {
+	                    case NodeType::RET:
+	                        if (!user->inputs.empty() && user->inputs[0] == param_node)
+	                            causes_escape = true;
+	                        break;
 
-							case NodeType::STORE:
-							case NodeType::PTR_STORE:
-								if (user->inputs[0] == node)
-									causes_escape = true;
-								break;
+	                    case NodeType::STORE:
+	                    case NodeType::PTR_STORE:
+	                        if (user->inputs[0] == param_node)
+	                            causes_escape = true;
+	                        break;
 
-							case NodeType::CALL:
-							case NodeType::INVOKE:
-								for (std::size_t i = 1; i < user->inputs.size(); ++i)
-								{
-									if (user->inputs[i] == node)
-									{
-										causes_escape = true;
-										break;
-									}
-								}
-								break;
+	                    case NodeType::CALL:
+	                    case NodeType::INVOKE:
+	                        /* check if parameter is passed as argument to another function */
+	                        for (std::size_t i = 1; i < user->inputs.size(); ++i)
+	                        {
+	                            if (user->inputs[i] == param_node)
+	                            {
+	                                causes_escape = true;
+	                                break;
+	                            }
+	                        }
+	                        break;
 
-							case NodeType::ADDR_OF:
-								if (user->inputs[0] == node)
-									causes_escape = true;
-								break;
-							default:
-								break;
-						}
+	                    case NodeType::ADDR_OF:
+	                        if (user->inputs[0] == param_node)
+	                            causes_escape = true;
+	                        break;
+	                    default:
+	                        break;
+	                }
 
-						if (causes_escape)
-							info.escape_sites.push_back(user);
-					}
+	                if (causes_escape)
+	                    info.escape_sites.push_back(user);
+	            }
 
-					result->param_info[{ func, param_idx }] = std::move(info);
-					param_idx++;
-				}
-			}
-		}
+	            result->param_info[{func, param_idx}] = std::move(info);
+	        }
+	    }
 	}
 
 	bool CallGraphAnalysisPass::parameter_escapes_analysis(Node *param)

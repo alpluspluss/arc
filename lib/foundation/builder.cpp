@@ -23,7 +23,7 @@ namespace arc
 
 	Node *Builder::alloc(const TypedData &type_def)
 	{
-		Node* node = create_node(NodeType::ALLOC, type_def.type());
+		Node *node = create_node(NodeType::ALLOC, type_def.type());
 		node->value = type_def;
 		return node;
 	}
@@ -33,10 +33,35 @@ namespace arc
 		if (!location)
 			throw std::invalid_argument("load location cannot be null");
 
-		/* if this is a pointer, we need to propagate the pointee type information */
-		Node *node = create_node(NodeType::LOAD, location->type_kind);
-		if ((location->type_kind == DataType::POINTER || location->type_kind == DataType::FUNCTION) && location->value.type() == DataType::POINTER)
-			node->value = location->value;
+		/* infer what type we're loading by tracing back through use-def chains */
+		DataType result_type = location->type_kind;
+		Node* stored_value = nullptr;
+		for (Node* user : location->users)
+		{
+			if (user->ir_type == NodeType::ALLOC)
+			{
+				result_type = user->type_kind;
+				break;
+			}
+			/* find what was stored to this location to get the actual type and metadata */
+			if ((user->ir_type == NodeType::STORE || user->ir_type == NodeType::PTR_STORE) &&
+				user->inputs.size() >= 2 && user->inputs[1] == location)
+			{
+				result_type = user->inputs[0]->type_kind;
+				stored_value = user->inputs[0];  /* remember what was stored */
+				break;
+			}
+		}
+
+		Node *node = create_node(NodeType::LOAD, result_type);
+
+		/* copy metadata from the stored value, not the storage location */
+		if (stored_value && (result_type == DataType::POINTER || result_type == DataType::FUNCTION))
+		{
+			if (stored_value->value.type() != DataType::VOID)
+				node->value = stored_value->value;
+		}
+
 		connect_inputs(node, { location });
 		return node;
 	}
@@ -46,7 +71,7 @@ namespace arc
 		if (!value || !location)
 			throw std::invalid_argument("store operands cannot be null");
 
-		Node* node = create_node(NodeType::STORE);
+		Node *node = create_node(NodeType::STORE);
 		connect_inputs(node, { value, location });
 		return node;
 	}
@@ -64,19 +89,19 @@ namespace arc
 		if (pointer->type_kind != DataType::POINTER)
 			throw std::invalid_argument("ptr_load requires pointer type");
 
-		const auto& ptr_data = pointer->value.get<DataType::POINTER>();
+		const auto &ptr_data = pointer->value.get<DataType::POINTER>();
 		auto pointee_type = DataType::VOID;
 		if (ptr_data.pointee)
 			pointee_type = ptr_data.pointee->type_kind;
 		else
 			throw std::invalid_argument("pointee node needs to be valid");
 
-		Node* node = create_node(NodeType::PTR_LOAD, pointee_type);
+		Node *node = create_node(NodeType::PTR_LOAD, pointee_type);
 		connect_inputs(node, { pointer });
 		return node;
 	}
 
-	Node* Builder::ptr_store(Node* value, Node* pointer)
+	Node *Builder::ptr_store(Node *value, Node *pointer)
 	{
 		if (!value || !pointer)
 			throw std::invalid_argument("ptr_store operands cannot be null");
@@ -84,14 +109,14 @@ namespace arc
 		if (pointer->type_kind != DataType::POINTER)
 			throw std::invalid_argument("ptr_store requires pointer type");
 
-		const auto& [pointee, addr_space, qual] = pointer->value.get<DataType::POINTER>();
+		const auto &[pointee, addr_space, qual] = pointer->value.get<DataType::POINTER>();
 		if (pointee)
 		{
 			if (value->type_kind != pointee->type_kind)
 				throw std::invalid_argument("value type must match pointer pointee type");
 		}
 
-		Node* node = create_node(NodeType::PTR_STORE);
+		Node *node = create_node(NodeType::PTR_STORE);
 		connect_inputs(node, { value, pointer });
 		return node;
 	}
@@ -248,51 +273,59 @@ namespace arc
 
 	Node *Builder::call(Node *function, const std::vector<Node *> &args)
 	{
-	    if (!function)
-	        throw std::invalid_argument("function cannot be null");
+		if (!function)
+			throw std::invalid_argument("function cannot be null");
 
-	    if (function->type_kind != DataType::FUNCTION && function->type_kind != DataType::POINTER)
-	        throw std::invalid_argument(std::format("call requires function or pointer type, got {}",
-	                                 static_cast<int>(function->type_kind)));
+		DataType return_type = DataType::VOID;
+		TypedData *return_type_data = nullptr;
 
-	    DataType return_type = DataType::VOID;
-	    if (function->type_kind == DataType::FUNCTION)
-	    {
-	        auto& fn_data = function->value.get<DataType::FUNCTION>();
-	        return_type = fn_data.return_type ? fn_data.return_type->type() : DataType::VOID;
-	    }
-	    else if (function->type_kind == DataType::POINTER)
-	    {
-	        auto& ptr_data = function->value.get<DataType::POINTER>();
-	        if (ptr_data.pointee && ptr_data.pointee->type_kind == DataType::FUNCTION)
-	        {
-	            auto& fn_data = ptr_data.pointee->value.get<DataType::FUNCTION>();
-	            return_type = fn_data.return_type ? fn_data.return_type->type() : DataType::VOID;
-	        }
-	    }
+		switch (function->type_kind)
+		{
+			case DataType::FUNCTION:
+			{
+				const auto &fn_data = function->value.get<DataType::FUNCTION>();
+				if (fn_data.return_type)
+				{
+					return_type = fn_data.return_type->type();
+					return_type_data = fn_data.return_type;
+				}
+				break;
+			}
+			case DataType::POINTER:
+			{
+				const auto &ptr_data = function->value.get<DataType::POINTER>();
+				if (!ptr_data.pointee || ptr_data.pointee->type_kind != DataType::FUNCTION)
+					throw std::invalid_argument("pointer must point to function type");
 
-	    Node *node = create_node(NodeType::CALL, return_type);
-	    if (function->type_kind == DataType::FUNCTION)
-	    {
-	        auto& fn_data = function->value.get<DataType::FUNCTION>();
-	        if (return_type != DataType::VOID && fn_data.return_type)
-	            node->value = *fn_data.return_type;
-	    }
-	    else if (function->type_kind == DataType::POINTER)
-	    {
-	        auto& ptr_data = function->value.get<DataType::POINTER>();
-	        if (ptr_data.pointee && ptr_data.pointee->type_kind == DataType::FUNCTION)
-	        {
-	            auto& fn_data = ptr_data.pointee->value.get<DataType::FUNCTION>();
-	            if (return_type != DataType::VOID && fn_data.return_type)
-	                node->value = *fn_data.return_type;
-	        }
-	    }
+				if (ptr_data.pointee->value.type() == DataType::FUNCTION)
+				{
+					const auto &fn_data = ptr_data.pointee->value.get<DataType::FUNCTION>();
+					if (fn_data.return_type)
+					{
+						return_type = fn_data.return_type->type();
+						return_type_data = fn_data.return_type;
+					}
+				}
+				break;
+			}
+			default:
+				throw std::invalid_argument("call target must be function or function pointer");
+		}
 
-	    std::vector<Node *> inputs = { function };
-	    inputs.insert(inputs.end(), args.begin(), args.end());
-	    connect_inputs(node, inputs);
-	    return node;
+		Node *node = create_node(NodeType::CALL, return_type);
+
+		/* preserve complex type information for TBAA */
+		if (return_type_data &&
+		    (return_type == DataType::POINTER || return_type == DataType::STRUCT ||
+		     return_type == DataType::ARRAY || return_type == DataType::VECTOR))
+		{
+			node->value = *return_type_data;
+		}
+
+		std::vector<Node *> inputs = { function };
+		inputs.insert(inputs.end(), args.begin(), args.end());
+		connect_inputs(node, inputs);
+		return node;
 	}
 
 	Node *Builder::ret(Node *value)
@@ -343,7 +376,7 @@ namespace arc
 		if (normal_target->ir_type != NodeType::ENTRY || except_target->ir_type != NodeType::ENTRY)
 			throw std::invalid_argument("invoke targets must be ENTRY nodes");
 
-		auto& fn_data = function->value.get<DataType::FUNCTION>();
+		auto &fn_data = function->value.get<DataType::FUNCTION>();
 		DataType return_type = fn_data.return_type ? fn_data.return_type->type() : DataType::VOID;
 
 		Node *node = create_node(NodeType::INVOKE, return_type);
@@ -356,79 +389,79 @@ namespace arc
 		return node;
 	}
 
-	Node* Builder::vector_build(const std::vector<Node*>& elements)
+	Node *Builder::vector_build(const std::vector<Node *> &elements)
 	{
-	    if (elements.empty())
-	        throw std::invalid_argument("vector_build requires at least one element");
+		if (elements.empty())
+			throw std::invalid_argument("vector_build requires at least one element");
 
-	    DataType elem_type = elements[0]->type_kind;
-	    for (const Node* elem : elements)
-	    {
-	        if (elem->type_kind != elem_type)
-	            throw std::invalid_argument("all vector elements must have the same type");
-	    }
+		DataType elem_type = elements[0]->type_kind;
+		for (const Node *elem: elements)
+		{
+			if (elem->type_kind != elem_type)
+				throw std::invalid_argument("all vector elements must have the same type");
+		}
 
-	    Node* node = create_node(NodeType::VECTOR_BUILD, DataType::VECTOR);
+		Node *node = create_node(NodeType::VECTOR_BUILD, DataType::VECTOR);
 
-	    DataTraits<DataType::VECTOR>::value vec_data = {};
-	    vec_data.elem_type = elem_type;
-	    vec_data.lane_count = static_cast<std::uint32_t>(elements.size());
-	    node->value.set<decltype(vec_data), DataType::VECTOR>(vec_data);
+		DataTraits<DataType::VECTOR>::value vec_data = {};
+		vec_data.elem_type = elem_type;
+		vec_data.lane_count = static_cast<std::uint32_t>(elements.size());
+		node->value.set<decltype(vec_data), DataType::VECTOR>(vec_data);
 
-	    connect_inputs(node, elements);
-	    return node;
+		connect_inputs(node, elements);
+		return node;
 	}
 
-	Node* Builder::vector_splat(Node* scalar, const std::uint32_t lane_count)
+	Node *Builder::vector_splat(Node *scalar, const std::uint32_t lane_count)
 	{
-	    if (!scalar)
-	        throw std::invalid_argument("scalar cannot be null");
+		if (!scalar)
+			throw std::invalid_argument("scalar cannot be null");
 
-	    if (lane_count == 0)
-	        throw std::invalid_argument("lane_count must be greater than 0");
+		if (lane_count == 0)
+			throw std::invalid_argument("lane_count must be greater than 0");
 
-	    Node* node = create_node(NodeType::VECTOR_SPLAT, DataType::VECTOR);
-	    DataTraits<DataType::VECTOR>::value vec_data = {};
-	    vec_data.elem_type = scalar->type_kind;
-	    vec_data.lane_count = lane_count;
-	    node->value.set<decltype(vec_data), DataType::VECTOR>(vec_data);
+		Node *node = create_node(NodeType::VECTOR_SPLAT, DataType::VECTOR);
+		DataTraits<DataType::VECTOR>::value vec_data = {};
+		vec_data.elem_type = scalar->type_kind;
+		vec_data.lane_count = lane_count;
+		node->value.set<decltype(vec_data), DataType::VECTOR>(vec_data);
 
-	    connect_inputs(node, {scalar});
-	    return node;
+		connect_inputs(node, { scalar });
+		return node;
 	}
 
-	Node* Builder::vector_extract(Node* vector, std::uint32_t index)
+	Node *Builder::vector_extract(Node *vector, std::uint32_t index)
 	{
-	    if (!vector)
-	        throw std::invalid_argument("vector cannot be null");
+		if (!vector)
+			throw std::invalid_argument("vector cannot be null");
 
-	    if (vector->type_kind != DataType::VECTOR)
-	        throw std::invalid_argument("vector_extract requires vector type");
+		if (vector->type_kind != DataType::VECTOR)
+			throw std::invalid_argument("vector_extract requires vector type");
 
-	    const auto& vec_data = vector->value.get<DataType::VECTOR>();
+		const auto &vec_data = vector->value.get<DataType::VECTOR>();
 
-	    if (index >= vec_data.lane_count)
-	        throw std::invalid_argument("vector index out of bounds");
+		if (index >= vec_data.lane_count)
+			throw std::invalid_argument("vector index out of bounds");
 
-	    Node* index_node = lit(index);
-	    Node* node = create_node(NodeType::VECTOR_EXTRACT, vec_data.elem_type);
-	    connect_inputs(node, { vector, index_node });
-	    return node;
+		Node *index_node = lit(index);
+		Node *node = create_node(NodeType::VECTOR_EXTRACT, vec_data.elem_type);
+		connect_inputs(node, { vector, index_node });
+		return node;
 	}
 
-	Node* Builder::struct_field(Node* struct_obj, const std::string& field_name)
+	Node *Builder::struct_field(Node *struct_obj, const std::string &field_name)
 	{
 		if (!struct_obj || struct_obj->type_kind != DataType::STRUCT)
 			throw std::invalid_argument("struct_field requires struct type");
 
-		const auto& struct_data = struct_obj->value.get<DataType::STRUCT>();
+		const auto &struct_data = struct_obj->value.get<DataType::STRUCT>();
 		auto field_type = DataType::VOID;
 		std::size_t field_index = 0;
 		TypedData field_type_data = {};
 
 		for (std::uint8_t i = 0; i < struct_data.fields.size(); ++i)
 		{
-			const auto& [name_id, ftype, fdata] = struct_data.fields[i];
+			const auto &[name_id, ftype, fdata] = struct_data.fields[i];
 			if (module.strtable().get(name_id) == field_name)
 			{
 				field_type = ftype;
@@ -441,8 +474,8 @@ namespace arc
 		if (field_type == DataType::VOID)
 			throw std::invalid_argument("field not found: " + field_name);
 
-		Node* field_index_node = lit(static_cast<std::uint32_t>(field_index));
-		Node* node = create_node(NodeType::ACCESS, field_type);
+		Node *field_index_node = lit(static_cast<std::uint32_t>(field_index));
+		Node *node = create_node(NodeType::ACCESS, field_type);
 		node->value = field_type_data;
 		connect_inputs(node, { struct_obj, field_index_node });
 		return node;
@@ -461,10 +494,10 @@ namespace arc
 		if (array->type_kind != DataType::ARRAY)
 			throw std::invalid_argument("array_index accepts only array type");
 
-		auto& arr_data = array->value.get<DataType::ARRAY>();
+		auto &arr_data = array->value.get<DataType::ARRAY>();
 		DataType elem_type = arr_data.elem_type;
 
-		Node* node = create_node(NodeType::ACCESS, elem_type);
+		Node *node = create_node(NodeType::ACCESS, elem_type);
 		connect_inputs(node, { array, index });
 		return node;
 	}
@@ -490,7 +523,7 @@ namespace arc
 			throw std::invalid_argument("FROM node requires at least one source");
 
 		DataType result_type = sources[0]->type_kind;
-		for (const Node *source : sources)
+		for (const Node *source: sources)
 		{
 			if (!source)
 				throw std::invalid_argument("FROM node cannot have null sources");
@@ -524,16 +557,16 @@ namespace arc
 		}
 	}
 
-	StructBuilder::StructBuilder(Builder& builder, const std::string_view name)
-	: builder(builder), struct_name_id(builder.module.intern_str(name)) {}
+	StructBuilder::StructBuilder(Builder &builder, const std::string_view name) : builder(builder),
+		struct_name_id(builder.module.intern_str(name)) {}
 
-	StructBuilder& StructBuilder::field(const std::string_view name, DataType type, const TypedData& type_data)
+	StructBuilder &StructBuilder::field(const std::string_view name, DataType type, const TypedData &type_data)
 	{
 		fields.emplace_back(builder.module.intern_str(name), type, std::move(type_data));
 		return *this;
 	}
 
-	StructBuilder& StructBuilder::field_ptr(const std::string_view name, Node *pointee_type, std::uint32_t addr_space)
+	StructBuilder &StructBuilder::field_ptr(const std::string_view name, Node *pointee_type, std::uint32_t addr_space)
 	{
 		/* you typically don't really care what default value actually is as it simply is to declare a definition,
 		 * so we can just use an empty TypedData here */
@@ -546,7 +579,7 @@ namespace arc
 		return *this;
 	}
 
-	StructBuilder& StructBuilder::self_ptr(const std::string_view name, const std::uint32_t addr_space)
+	StructBuilder &StructBuilder::self_ptr(const std::string_view name, const std::uint32_t addr_space)
 	{
 		/* self-referential pointer field. pointee = nullptr for forward reference */
 		TypedData ptr_type_data = {};
@@ -564,9 +597,9 @@ namespace arc
 		struct_data.alignment = is_packed ? 1 : alignment;
 		struct_data.name = struct_name_id;
 
-		u8slice<std::tuple<StringTable::StringId, DataType, TypedData>> final_fields = {};
+		u8slice<std::tuple<StringTable::StringId, DataType, TypedData> > final_fields = {};
 		std::size_t current_offset = 0;
-		for (const auto&[name_id, type, type_data] : fields)
+		for (const auto &[name_id, type, type_data]: fields)
 		{
 			if (!is_packed)
 			{
@@ -589,7 +622,8 @@ namespace arc
 
 		if (!is_packed)
 		{
-			if (const std::size_t final_padding = (struct_data.alignment - (current_offset % struct_data.alignment)) % struct_data.alignment;
+			if (const std::size_t final_padding =
+						(struct_data.alignment - (current_offset % struct_data.alignment)) % struct_data.alignment;
 				final_padding > 0)
 			{
 				auto padding_name = builder.module.intern_str("__pad_final");
@@ -607,7 +641,7 @@ namespace arc
 		return type_def;
 	}
 
-	StructBuilder& StructBuilder::packed()
+	StructBuilder &StructBuilder::packed()
 	{
 		is_packed = true;
 		return *this;

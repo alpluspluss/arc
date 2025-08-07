@@ -200,25 +200,25 @@ namespace arc
 
 		void analyze_function(CallGraphResult *result, Node *func, Module &module);
 
-		void analyze_call_site(CallGraphResult *result, Node *call_node, Node *containing_func);
+		void analyze_call_site(CallGraphResult *result, Node *call_node, Node *containing_func, Module& module);
 
-		void analyze_parameter_flow(CallGraphResult *result, Module &module);
+		static void analyze_parameter_flow(CallGraphResult *result, Module &module);
 
 		static void compute_function_purity(CallGraphResult *result, Module &module);
 
 		static void compute_scc(CallGraphResult *result);
 
-		std::vector<Node *> chase_function_pointer(Node *pointer_node, std::unordered_set<Node *> &visited);
+		std::vector<Node *> chase_function_pointer(Node *pointer_node, std::unordered_set<Node *> &visited, Module& module);
 
-		void chase_pointer_def(Node *node, std::unordered_set<Node *> &functions, std::unordered_set<Node *> &visited);
+		void chase_pointer_def(Node *node, std::unordered_set<Node *> &functions, std::unordered_set<Node *> &visited, Module& module);
 
 		void chase_memory_location(Node *load_node, std::unordered_set<Node *> &functions,
-		                           std::unordered_set<Node *> &visited);
+		                           std::unordered_set<Node *> &visited, Module& module);
 
 		void find_stores_to_location(Node *location, std::unordered_set<Node *> &functions,
-		                             std::unordered_set<Node *> &visited);
+		                             std::unordered_set<Node *> &visited, Module& module);
 
-		bool parameter_escapes_analysis(Node *param);
+		static bool parameter_escapes_analysis(Node *param);
 
 		static bool escapes_via_return_only(Node *param);
 
