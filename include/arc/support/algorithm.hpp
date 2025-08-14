@@ -23,4 +23,31 @@ namespace arc
 		slice.erase(new_end, slice.end());
 		return removed_count;
 	}
+
+	/**
+	 * @brief Update a node's input connection, maintaining use-def chains
+	 *
+	 * Replaces old_input with new_input in node's input list and updates
+	 * the corresponding use-def chains. If old_input is not found in node's
+	 * inputs, no changes are made.
+	 *
+	 * @param node Node to update connection for
+	 * @param old_input Current input node to replace
+	 * @param new_input New input node to connect
+	 * @return true if connection was updated, false if old_input not found
+	 */
+	bool update_connection(Node* node, Node* old_input, Node* new_input);
+
+	/**
+	 * @brief Replace all uses of old_node with new_node across all users
+	 *
+	 * Updates all nodes that use old_node as an input to use new_node instead.
+	 * Maintains proper use-def chain invariants by updating both input lists
+	 * and user lists. After this operation, old_node will have no users.
+	 *
+	 * @param old_node Node whose uses should be replaced
+	 * @param new_node Node to replace old_node with
+	 * @return Number of connections updated
+	 */
+	std::size_t update_all_connections(Node* old_node, Node* new_node);
 }
