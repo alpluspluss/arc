@@ -137,7 +137,7 @@ namespace arc
 			/* a function is recursive if its strongly connected component
 			 * contains more than just itself, or if it directly calls itself */
 			return it->second.size() > 1 ||
-			       std::find(it->second.begin(), it->second.end(), func) != it->second.end();
+			       std::ranges::find(it->second, func) != it->second.end();
 		}
 		return false;
 	}
@@ -263,7 +263,8 @@ namespace arc
 		});
 	}
 
-	void CallGraphAnalysisPass::analyze_call_site(CallGraphResult *result, Node *call_node, Node *containing_func, Module& module)
+	void CallGraphAnalysisPass::analyze_call_site(CallGraphResult *result, Node *call_node, Node *containing_func,
+	                                              Module &module)
 	{
 		if (call_node->inputs.empty())
 			return;
@@ -304,7 +305,8 @@ namespace arc
 	}
 
 	std::vector<Node *> CallGraphAnalysisPass::chase_function_pointer(Node *pointer_node,
-	                                                                  std::unordered_set<Node *> &visited, Module& module)
+	                                                                  std::unordered_set<Node *> &visited,
+	                                                                  Module &module)
 	{
 		if (!pointer_node || visited.contains(pointer_node))
 			return {};
@@ -349,8 +351,9 @@ namespace arc
 		return { functions.begin(), functions.end() };
 	}
 
-	void CallGraphAnalysisPass::chase_pointer_def(Node *node, std::unordered_set<Node *> &functions, // NOLINT(*-no-recursion)
-	                                              std::unordered_set<Node *> &visited, Module& module)
+	void CallGraphAnalysisPass::chase_pointer_def(Node *node, std::unordered_set<Node *> &functions,
+	                                              // NOLINT(*-no-recursion)
+	                                              std::unordered_set<Node *> &visited, Module &module)
 	{
 		if (!node || visited.contains(node))
 			return;
@@ -390,13 +393,13 @@ namespace arc
 				{
 					/* find the function this parameter belongs to and then look at
 					 * all call sites to see what gets passed for this parameter */
-					if (Node* owner_func = find_function_for_region(func_region, module))
+					if (Node *owner_func = find_function_for_region(func_region, module))
 					{
 						std::size_t param_idx = find_parameter_index(owner_func, node);
 						for (Node *caller: owner_func->users)
 						{
 							if ((caller->ir_type == NodeType::CALL || caller->ir_type == NodeType::INVOKE) &&
-								caller->inputs.size() > param_idx + 1)
+							    caller->inputs.size() > param_idx + 1)
 							{
 								chase_pointer_def(caller->inputs[param_idx + 1], functions, visited, module);
 							}
@@ -436,19 +439,22 @@ namespace arc
 		}
 	}
 
-	void CallGraphAnalysisPass::chase_memory_location(Node *load_node, std::unordered_set<Node *> &functions, // NOLINT(*-no-recursion)
-	                                                  std::unordered_set<Node *> &visited, Module& module)
+	void CallGraphAnalysisPass::chase_memory_location(Node *load_node, std::unordered_set<Node *> &functions,
+	                                                  // NOLINT(*-no-recursion)
+	                                                  std::unordered_set<Node *> &visited, Module &module)
 	{
 		Node *address = nullptr;
-		if ((load_node->ir_type == NodeType::LOAD || load_node->ir_type == NodeType::PTR_LOAD) && !load_node->inputs.empty())
+		if ((load_node->ir_type == NodeType::LOAD || load_node->ir_type == NodeType::PTR_LOAD) && !load_node->inputs.
+		    empty())
 			address = load_node->inputs[0];
 
 		if (address)
 			find_stores_to_location(address, functions, visited, module);
 	}
 
-	void CallGraphAnalysisPass::find_stores_to_location(Node *location, std::unordered_set<Node *> &functions, // NOLINT(*-no-recursion)
-	                                                    std::unordered_set<Node *> &visited, Module& module)
+	void CallGraphAnalysisPass::find_stores_to_location(Node *location, std::unordered_set<Node *> &functions,
+	                                                    // NOLINT(*-no-recursion)
+	                                                    std::unordered_set<Node *> &visited, Module &module)
 	{
 		/* look for all STORE operations that write to this memory location.
 		 * this is where we connect the dots between function pointer assignments
@@ -471,97 +477,97 @@ namespace arc
 		{
 			/* if the location is an address-of operation, we need to find all stores
 			 * to the original pointer definition to find where it was assigned */
-			Node* alloc_site = location->inputs[0];
+			Node *alloc_site = location->inputs[0];
 			find_stores_to_location(alloc_site, functions, visited, module);
 		}
 	}
 
 	void CallGraphAnalysisPass::analyze_parameter_flow(CallGraphResult *result, Module &module)
 	{
-	    /* analyze how parameters flow through functions to determine escapement.
-	     * a parameter escapes if it can be observed outside the function through
-	     * returns, stores to global memory, or passing to other functions that
-	     * might let it escape */
-	    for (Node *func: module.functions())
-	    {
-	        if (func->ir_type != NodeType::FUNCTION)
-	            continue;
+		/* analyze how parameters flow through functions to determine escapement.
+		 * a parameter escapes if it can be observed outside the function through
+		 * returns, stores to global memory, or passing to other functions that
+		 * might let it escape */
+		for (Node *func: module.functions())
+		{
+			if (func->ir_type != NodeType::FUNCTION)
+				continue;
 
-	        Region *func_region = find_function_region(func, module);
-	        if (!func_region)
-	            continue;
+			Region *func_region = find_function_region(func, module);
+			if (!func_region)
+				continue;
 
-	        /* parameters are stored in the function's inputs list, not as separate
-	         * nodes in the region. each input represents a parameter in declaration order */
-	        for (std::size_t param_idx = 0; param_idx < func->inputs.size(); ++param_idx)
-	        {
-	            Node *param_node = func->inputs[param_idx];
-	            if (!param_node || param_node->ir_type != NodeType::PARAM)
-	                continue;
+			/* parameters are stored in the function's inputs list, not as separate
+			 * nodes in the region. each input represents a parameter in declaration order */
+			for (std::size_t param_idx = 0; param_idx < func->inputs.size(); ++param_idx)
+			{
+				Node *param_node = func->inputs[param_idx];
+				if (!param_node || param_node->ir_type != NodeType::PARAM)
+					continue;
 
-	            ParamInfo info;
-	            info.escapes = parameter_escapes_analysis(param_node);
-	            info.read_only = true;
+				ParamInfo info;
+				info.escapes = parameter_escapes_analysis(param_node);
+				info.read_only = true;
 
-	            /* check if parameter is ever modified within the function */
-	            for (Node *user: param_node->users)
-	            {
-	                if (user->ir_type == NodeType::STORE || user->ir_type == NodeType::PTR_STORE)
-	                {
-	                    if (user->inputs.size() >= 2 && user->inputs[1] == param_node)
-	                    {
-	                        info.read_only = false;
-	                        break;
-	                    }
-	                }
-	            }
+				/* check if parameter is ever modified within the function */
+				for (Node *user: param_node->users)
+				{
+					if (user->ir_type == NodeType::STORE || user->ir_type == NodeType::PTR_STORE)
+					{
+						if (user->inputs.size() >= 2 && user->inputs[1] == param_node)
+						{
+							info.read_only = false;
+							break;
+						}
+					}
+				}
 
-	            /* collect specific nodes that cause this parameter to escape */
-	            for (Node *user: param_node->users)
-	            {
-	                bool causes_escape = false;
+				/* collect specific nodes that cause this parameter to escape */
+				for (Node *user: param_node->users)
+				{
+					bool causes_escape = false;
 
-	                switch (user->ir_type)
-	                {
-	                    case NodeType::RET:
-	                        if (!user->inputs.empty() && user->inputs[0] == param_node)
-	                            causes_escape = true;
-	                        break;
+					switch (user->ir_type)
+					{
+						case NodeType::RET:
+							if (!user->inputs.empty() && user->inputs[0] == param_node)
+								causes_escape = true;
+							break;
 
-	                    case NodeType::STORE:
-	                    case NodeType::PTR_STORE:
-	                        if (user->inputs[0] == param_node)
-	                            causes_escape = true;
-	                        break;
+						case NodeType::STORE:
+						case NodeType::PTR_STORE:
+							if (user->inputs[0] == param_node)
+								causes_escape = true;
+							break;
 
-	                    case NodeType::CALL:
-	                    case NodeType::INVOKE:
-	                        /* check if parameter is passed as argument to another function */
-	                        for (std::size_t i = 1; i < user->inputs.size(); ++i)
-	                        {
-	                            if (user->inputs[i] == param_node)
-	                            {
-	                                causes_escape = true;
-	                                break;
-	                            }
-	                        }
-	                        break;
+						case NodeType::CALL:
+						case NodeType::INVOKE:
+							/* check if parameter is passed as argument to another function */
+							for (std::size_t i = 1; i < user->inputs.size(); ++i)
+							{
+								if (user->inputs[i] == param_node)
+								{
+									causes_escape = true;
+									break;
+								}
+							}
+							break;
 
-	                    case NodeType::ADDR_OF:
-	                        if (user->inputs[0] == param_node)
-	                            causes_escape = true;
-	                        break;
-	                    default:
-	                        break;
-	                }
+						case NodeType::ADDR_OF:
+							if (user->inputs[0] == param_node)
+								causes_escape = true;
+							break;
+						default:
+							break;
+					}
 
-	                if (causes_escape)
-	                    info.escape_sites.push_back(user);
-	            }
+					if (causes_escape)
+						info.escape_sites.push_back(user);
+				}
 
-	            result->param_info[{func, param_idx}] = std::move(info);
-	        }
-	    }
+				result->param_info[{ func, param_idx }] = std::move(info);
+			}
+		}
 	}
 
 	bool CallGraphAnalysisPass::parameter_escapes_analysis(Node *param)
@@ -699,7 +705,7 @@ namespace arc
 		}
 	}
 
-	bool CallGraphAnalysisPass::analyze_function_purity(Node *func, const CallGraphResult &cg, Module& m)
+	bool CallGraphAnalysisPass::analyze_function_purity(Node *func, const CallGraphResult &cg, Module &m)
 	{
 		/* extern functions are conservatively assumed to be impure since we
 		 * don't know what their implementation does */
@@ -783,6 +789,16 @@ namespace arc
 		std::stack<Node *> stack;
 		int index = 0;
 
+		auto has_self_loop = [&](Node *func) -> bool
+		{
+			if (auto it = result->callee_map.find(func);
+				it != result->callee_map.end())
+			{
+				return std::ranges::find(it->second, func) != it->second.end();
+			}
+			return false;
+		};
+
 		std::function<void(Node *)> strongconnect = [&](Node *func)
 		{
 			indices[func] = index;
@@ -792,12 +808,12 @@ namespace arc
 			on_stack.insert(func);
 
 			/* examine all functions called by this function */
-			if (auto it = result->callee_map.find(func);
+			if (const auto it = result->callee_map.find(func);
 				it != result->callee_map.end())
 			{
 				for (Node *callee: it->second)
 				{
-					if (indices.find(callee) == indices.end())
+					if (!indices.contains(callee))
 					{
 						/* callee hasn't been visited yet - recurse */
 						strongconnect(callee);
@@ -825,9 +841,14 @@ namespace arc
 				}
 				while (current != func);
 
-				/* record the SCC for each function in the component */
-				for (Node *member: component)
-					result->scc_map[member] = component;
+				/* only record SCCs that represent actual recursion:
+				 * - multi-function SCCs (indirect recursion)
+				 * - single-function SCCs with self-loops (direct recursion) */
+				if (component.size() > 1 || (component.size() == 1 && has_self_loop(component[0])))
+				{
+					for (Node *member: component)
+						result->scc_map[member] = component;
+				}
 			}
 		};
 
