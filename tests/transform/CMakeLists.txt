@@ -20,6 +20,11 @@ arc_test(dse-test
         LIBS Arc::Arc
 )
 
+arc_test(inliner-test
+        SOURCES inliner.cpp
+        LIBS Arc::Arc
+)
+
 arc_test(m2r-test
         SOURCES mem2reg.cpp
         LIBS Arc::Arc
