@@ -21,7 +21,7 @@ protected:
 
 	void TearDown() override
 	{
-		arc::dump(*module.get());
+		arc::dump(*module);
 		pass_manager.reset();
 		builder.reset();
 		module.reset();
