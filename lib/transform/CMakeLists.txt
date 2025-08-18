@@ -5,6 +5,7 @@ arc_library(Transform SOURCES
         cse.cpp
         dce.cpp
         dse.cpp
+        hoistexpr.cpp
         inliner.cpp
         mem2reg.cpp
         sroa.cpp
