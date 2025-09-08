@@ -358,6 +358,15 @@ namespace arc
 		Node *invoke(Node *function, const std::vector<Node *> &args, Node *normal_target, Node *except_target);
 
 		/**
+		 * @brief Create conditional value selection node
+		 * @param condition Condition to evaluate
+		 * @param true_value Value to select if condition is true
+		 * @param false_value Value to select if condition is false
+		 * @return Node representing the selected value
+		 */
+		Node *select(Node *condition, Node *true_value, Node *false_value);
+
+		/**
 		 * @brief Create a vector build node from scalar elements
 		 * @param elements Scalar elements to combine into vector
 		 * @return Node representing the vector
@@ -416,7 +425,6 @@ namespace arc
 			return alloc_node;
 		}
 
-
 		template<DataType T>
 			requires(T == DataType::FUNCTION /* || T == DataType::STRUCT */)
 		Opaque<T> opaque_t(std::string_view name);
@@ -443,6 +451,14 @@ namespace arc
 		 * @return Node representing the merged value
 		 */
 		Node *from(const std::vector<Node *> &sources);
+
+		/**
+		 * @brief Allocate an array of a struct type
+		 * @param struct_type Struct type definition
+		 * @param count Size of the element
+		 * @param n Number of such arrays to allocate; Defaults to 1
+		 */
+		Node* array_alloc(const TypedData& struct_type, std::uint32_t count, std::uint32_t n = 1);
 
 	private:
 		Module &module;

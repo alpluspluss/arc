@@ -91,6 +91,8 @@ namespace arc
 		JUMP,
 		/** @brief A conditional jump */
 		BRANCH,
+		/** @brief Conditional value selection */
+		SELECT,
 		/** @brief A function call with exception handling or unwind */
 		INVOKE,
 		/** @brief Build a vector from scalar values of different operand */

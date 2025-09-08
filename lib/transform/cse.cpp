@@ -441,6 +441,7 @@ namespace arc
 			case NodeType::VECTOR_SPLAT:
 			case NodeType::ACCESS:
 			case NodeType::FROM:
+			case NodeType::SELECT:
 				break;
 
 			default:

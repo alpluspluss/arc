@@ -108,8 +108,28 @@ namespace arc
 		if (!pointer)
 			throw std::invalid_argument("pointer cannot be null");
 
+		/* handle ACCESS nodes that represent field/element addresses */
+		if (pointer->ir_type == NodeType::ACCESS)
+		{
+			/* ACCESS nodes from struct field or array index operations represent
+			 * addresses that can be loaded from, even though they're not technically
+			 * DataType::POINTER. the result type is determined by the ACCESS node's type_kind */
+			Node *node = create_node(NodeType::PTR_LOAD, pointer->type_kind);
+
+			/* preserve complex type metadata if present */
+			if (pointer->value.type() != DataType::VOID &&
+				(pointer->type_kind == DataType::STRUCT || pointer->type_kind == DataType::POINTER ||
+				 pointer->type_kind == DataType::ARRAY || pointer->type_kind == DataType::VECTOR))
+			{
+				node->value = pointer->value;
+			}
+
+			connect_inputs(node, { pointer });
+			return node;
+		}
+
 		if (pointer->type_kind != DataType::POINTER)
-			throw std::invalid_argument("ptr_load requires pointer type");
+			throw std::invalid_argument("ptr_load requires pointer type or ACCESS node");
 
 		const auto &ptr_data = pointer->value.get<DataType::POINTER>();
 		auto pointee_type = DataType::VOID;
@@ -411,6 +431,22 @@ namespace arc
 		return node;
 	}
 
+	Node *Builder::select(Node *condition, Node *true_value, Node *false_value)
+	{
+		if (!condition || !true_value || !false_value)
+			throw std::invalid_argument("select operands cannot be null");
+
+		if (condition->type_kind != DataType::BOOL)
+			throw std::invalid_argument("select condition must be boolean type");
+
+		if (true_value->type_kind != false_value->type_kind)
+			throw std::invalid_argument("select operands must have matching types");
+
+		Node *node = create_node(NodeType::SELECT, true_value->type_kind);
+		connect_inputs(node, { condition, true_value, false_value });
+		return node;
+	}
+
 	Node *Builder::vector_build(const std::vector<Node *> &elements)
 	{
 		if (elements.empty())
@@ -473,32 +509,123 @@ namespace arc
 
 	Node *Builder::struct_field(Node *struct_obj, const std::string &field_name)
 	{
-		if (!struct_obj || struct_obj->type_kind != DataType::STRUCT)
-			throw std::invalid_argument("struct_field requires struct type");
+		if (!struct_obj)
+			throw std::invalid_argument("struct_field requires non-null struct object");
 
-		const auto &struct_data = struct_obj->value.get<DataType::STRUCT>();
-		auto field_type = DataType::VOID;
+		const DataTraits<DataType::STRUCT>::value* struct_data = nullptr;
+
+		/* handle ACCESS nodes from previous field access or array indexing FIRST */
+		if (struct_obj->ir_type == NodeType::ACCESS && struct_obj->type_kind == DataType::STRUCT)
+		{
+			if (struct_obj->value.type() != DataType::STRUCT)
+			{
+				/* try to find struct type from module registry using string id
+				 * if it's not found */
+				if (struct_obj->str_id != 0)
+				{
+					const auto& typemap = module.typemap();
+					const std::string_view struct_name = module.strtable().get(struct_obj->str_id);
+					if (const auto it = typemap.find(std::string(struct_name));
+						it != typemap.end() && it->second.type() == DataType::STRUCT)
+					{
+						/* then update the ACCESS node with proper type info for future operations */
+						struct_obj->value = it->second;
+						struct_data = &struct_obj->value.get<DataType::STRUCT>();
+					}
+					else
+					{
+						throw std::invalid_argument("ACCESS node missing struct type information and cannot find in module registry");
+					}
+				}
+				else
+				{
+					throw std::invalid_argument("ACCESS node missing struct type information");
+				}
+			}
+			else
+			{
+				struct_data = &struct_obj->value.get<DataType::STRUCT>();
+			}
+		}
+		/* handle ALLOC nodes that allocated struct types */
+		else if (struct_obj->ir_type == NodeType::ALLOC && struct_obj->type_kind == DataType::STRUCT)
+		{
+			if (struct_obj->value.type() != DataType::STRUCT)
+				throw std::invalid_argument("struct allocation missing type information");
+			struct_data = &struct_obj->value.get<DataType::STRUCT>();
+		}
+		/* handle direct struct nodes - allocation or literal struct values */
+		else if (struct_obj->type_kind == DataType::STRUCT)
+		{
+			if (struct_obj->value.type() != DataType::STRUCT)
+				throw std::invalid_argument("struct node missing type information");
+			struct_data = &struct_obj->value.get<DataType::STRUCT>();
+		}
+		/* handle pointer-to-struct (from addr_of operations) */
+		else if (struct_obj->type_kind == DataType::POINTER)
+		{
+			const auto &ptr_data = struct_obj->value.get<DataType::POINTER>();
+			if (!ptr_data.pointee)
+				throw std::invalid_argument("pointer has null pointee");
+
+			if (ptr_data.pointee->type_kind != DataType::STRUCT)
+				throw std::invalid_argument("pointer must point to struct type");
+
+			if (ptr_data.pointee->value.type() != DataType::STRUCT)
+				throw std::invalid_argument("pointee struct missing type information");
+			struct_data = &ptr_data.pointee->value.get<DataType::STRUCT>();
+		}
+		else
+		{
+			throw std::invalid_argument("struct_field requires struct type, pointer-to-struct, or struct ACCESS node");
+		}
+
+		/* find the field in the struct definition */
+		DataType field_type = DataType::VOID;
 		std::size_t field_index = 0;
 		TypedData field_type_data = {};
+		bool found_field = false;
 
-		for (std::uint8_t i = 0; i < struct_data.fields.size(); ++i)
+		for (std::uint8_t i = 0; i < struct_data->fields.size(); ++i)
 		{
-			const auto &[name_id, ftype, fdata] = struct_data.fields[i];
-			if (module.strtable().get(name_id) == field_name)
+			const auto &[name_id, ftype, fdata] = struct_data->fields[i];
+			std::string_view current_field_name = module.strtable().get(name_id);
+
+			/* skip compiler-generated padding fields */
+			if (current_field_name.starts_with("__pad"))
+				continue;
+
+			if (current_field_name == field_name)
 			{
 				field_type = ftype;
-				field_index = i;
+				field_index = i; /* use actual index including padding for offset calculation */
 				field_type_data = fdata;
+				found_field = true;
 				break;
 			}
 		}
 
-		if (field_type == DataType::VOID)
+		if (!found_field)
 			throw std::invalid_argument("field not found: " + field_name);
 
 		Node *field_index_node = lit(static_cast<std::uint32_t>(field_index));
 		Node *node = create_node(NodeType::ACCESS, field_type);
-		node->value = field_type_data;
+
+		/* preserve complete type metadata for complex types to enable nested access */
+		if (field_type == DataType::STRUCT || field_type == DataType::POINTER ||
+			field_type == DataType::ARRAY || field_type == DataType::VECTOR ||
+			field_type == DataType::FUNCTION)
+		{
+			node->value = field_type_data;
+		}
+
+		/* for struct fields, also store the struct name for type registry lookup */
+		if (field_type == DataType::STRUCT && field_type_data.type() == DataType::STRUCT)
+		{
+			const auto& nested_struct_data = field_type_data.get<DataType::STRUCT>();
+			node->str_id = nested_struct_data.name;
+		}
+
 		connect_inputs(node, { struct_obj, field_index_node });
 		return node;
 	}
@@ -520,6 +647,23 @@ namespace arc
 		DataType elem_type = arr_data.elem_type;
 
 		Node *node = create_node(NodeType::ACCESS, elem_type);
+
+		/* we preserve struct type data for element access */
+		if (elem_type == DataType::STRUCT)
+		{
+			if (array->ir_type == NodeType::ALLOC && array->str_id != 0)
+			{
+				const auto& typemap = module.typemap();
+				std::string_view struct_name = module.strtable().get(array->str_id);
+				auto it = typemap.find(std::string(struct_name));
+				if (it != typemap.end() && it->second.type() == DataType::STRUCT)
+				{
+					node->value = it->second;
+					node->str_id = array->str_id;
+				}
+			}
+		}
+
 		connect_inputs(node, { array, index });
 		return node;
 	}
@@ -562,6 +706,26 @@ namespace arc
 		Node *from_node = create_node(NodeType::FROM, result_type);
 		connect_inputs(from_node, sources);
 		return from_node;
+	}
+
+	Node *Builder::array_alloc(const TypedData &struct_type, std::uint32_t count, std::uint32_t n)
+	{
+		if (struct_type.type() != DataType::STRUCT)
+			throw std::invalid_argument("struct_type must be DataType::STRUCT");
+
+		Node* count_lit = lit(n);
+		Node* alloc_node = create_node(NodeType::ALLOC, DataType::ARRAY);
+
+		DataTraits<DataType::ARRAY>::value arr_data;
+		arr_data.elem_type = DataType::STRUCT;
+		arr_data.count = count;
+		arr_data.elements = {};
+		alloc_node->value.set<decltype(arr_data), DataType::ARRAY>(arr_data);
+
+		alloc_node->str_id = struct_type.get<DataType::STRUCT>().name;
+
+		connect_inputs(alloc_node, { count_lit });
+		return alloc_node;
 	}
 
 	void Builder::connect_inputs(Node *node, const std::vector<Node *> &inputs)

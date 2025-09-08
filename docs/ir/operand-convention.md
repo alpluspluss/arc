@@ -76,6 +76,7 @@ ADDR_OF:   [variable]                /* &variable */
 ```
 BRANCH:    [condition, true_target, false_target]    /* if-then-else order */
 JUMP:      [target]                                  /* goto target */
+SELECT:    [condition, true_target, false_target]    /* select between two paths */
 CALL:      [function, arg1, arg2, ...]               /* callee first, then arguments */
 INVOKE:    [function, normal_target, except_target, arg1, arg2, ...]
 ```

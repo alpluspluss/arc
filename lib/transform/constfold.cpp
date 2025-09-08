@@ -354,6 +354,7 @@ namespace arc
 			case NodeType::BSHR:
 			case NodeType::BNOT:
 			case NodeType::BRANCH:
+			case NodeType::SELECT:
 			case NodeType::FROM:
 			case NodeType::CAST:
 				return true;
@@ -415,6 +416,34 @@ namespace arc
 
 			case NodeType::CAST:
 				return fold_cast(node);
+
+			case NodeType::SELECT:
+			{
+				if (node->ir_type != NodeType::SELECT || node->inputs.size() != 3)
+					return nullptr;
+
+				const Node *condition = node->inputs[0];
+				const Node *true_value = node->inputs[1];
+				const Node *false_value = node->inputs[2];
+
+				/* fold if condition is constant */
+				if (condition && condition->ir_type == NodeType::LIT && condition->type_kind == DataType::BOOL)
+				{
+					const bool cond_val = condition->value.get<DataType::BOOL>();
+					return const_cast<Node *>(cond_val ? true_value : false_value);
+				}
+
+				/* fold if both values are identical literals */
+				if (true_value && false_value &&
+					true_value->ir_type == NodeType::LIT &&
+					false_value->ir_type == NodeType::LIT &&
+					literals_equal(true_value, false_value))
+				{
+					return const_cast<Node *>(true_value);
+				}
+
+				return nullptr;
+			}
 
 			default:
 				return nullptr;
