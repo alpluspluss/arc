@@ -1,6 +1,5 @@
 # this project is part of the Arc project; licensed under the MIT license. see LICENSE for more info
 
-add_subdirectory(aarch64)
 add_subdirectory(analysis)
 add_subdirectory(codegen)
 add_subdirectory(foundation)
@@ -13,7 +12,6 @@ add_library(arc INTERFACE)
 add_library(Arc::Arc ALIAS arc)
 
 target_link_libraries(arc INTERFACE
-        Arc::Aarch64
         Arc::Analysis
         Arc::Codegen
         Arc::Foundation
@@ -21,8 +19,8 @@ target_link_libraries(arc INTERFACE
         Arc::Transform
 )
 
-if(ARC_INSTALL)
+if (ARC_INSTALL)
     install(TARGETS arc
             EXPORT ${targets_export_name}
             COMPONENT "${PROJECT_NAME}")
-endif()
+endif ()

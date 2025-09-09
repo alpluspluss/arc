@@ -2,7 +2,6 @@
 
 #include <queue>
 #include <arc/codegen/lowering.hpp>
-#include <arc/codegen/selection-dag.hpp>
 #include <arc/foundation/module.hpp>
 #include <arc/foundation/pass-manager.hpp>
 #include <arc/foundation/region.hpp>
