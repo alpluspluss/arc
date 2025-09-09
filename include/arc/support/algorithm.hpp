@@ -3,6 +3,7 @@
 #pragma once
 
 #include <algorithm>
+#include <arc/codegen/instruction.hpp>
 #include <arc/support/slice.hpp>
 
 namespace arc
@@ -50,4 +51,29 @@ namespace arc
 	 * @return Number of connections updated
 	 */
 	std::size_t update_all_connections(Node* old_node, Node* new_node);
+
+	template<TargetInstruction T>
+	class SelectionDAG;
+
+	/**
+	 * @brief Add operand relationship between two DAG nodes
+	 * @param user User node
+	 * @param operand Operand node
+	 */
+	template<TargetInstruction T>
+	void add_operand(typename SelectionDAG<T>::DAGNode* user, typename SelectionDAG<T>::DAGNode* operand)
+	{
+		if (!user || !operand)
+			return;
+
+		user->operands.push_back(operand);
+		operand->users.push_back(user);
+	}
+
+	/**
+	 * @brief Extract integer value from a literal node
+	 * @param node Literal node to extract from
+	 * @return Integer value, or 0 if not a literal
+	 */
+	std::int64_t extract_literal_value(Node *node);
 }

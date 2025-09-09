@@ -84,11 +84,4 @@ namespace arc
 		 */
 		static Node* create_literal_node(std::int64_t value, DataType type);
 	};
-
-	/**
-	 * @brief Extract integer value from a literal node
-	 * @param node Literal node to extract from
-	 * @return Integer value, or 0 if not a literal
-	 */
-	std::int64_t extract_literal_value(Node *node);
 }

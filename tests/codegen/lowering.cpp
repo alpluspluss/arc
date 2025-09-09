@@ -6,6 +6,7 @@
 #include <arc/foundation/pass-manager.hpp>
 #include <arc/support/dump.hpp>
 #include <arc/codegen/lowering.hpp>
+#include <arc/support/algorithm.hpp>
 #include <gtest/gtest.h>
 
 class IRLoweringFixture : public testing::Test

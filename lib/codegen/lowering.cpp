@@ -1,12 +1,13 @@
 /* this project is part of the Arc project; licensed under the MIT license. see LICENSE for more info */
 
 #include <queue>
+#include <arc/codegen/lowering.hpp>
+#include <arc/codegen/selection-dag.hpp>
 #include <arc/foundation/module.hpp>
 #include <arc/foundation/pass-manager.hpp>
 #include <arc/foundation/region.hpp>
 #include <arc/support/algorithm.hpp>
 #include <arc/support/inference.hpp>
-#include <arc/codegen/lowering.hpp>
 
 namespace arc
 {
@@ -367,33 +368,5 @@ namespace arc
 		}
 
 		return lit_node;
-	}
-
-	std::int64_t extract_literal_value(Node* node)
-	{
-		if (!node || node->ir_type != NodeType::LIT)
-			return 0;
-
-		switch (node->type_kind)
-		{
-			case DataType::INT8:
-				return node->value.get<DataType::INT8>();
-			case DataType::INT16:
-				return node->value.get<DataType::INT16>();
-			case DataType::INT32:
-				return node->value.get<DataType::INT32>();
-			case DataType::INT64:
-				return node->value.get<DataType::INT64>();
-			case DataType::UINT8:
-				return node->value.get<DataType::UINT8>();
-			case DataType::UINT16:
-				return node->value.get<DataType::UINT16>();
-			case DataType::UINT32:
-				return node->value.get<DataType::UINT32>();
-			case DataType::UINT64:
-				return static_cast<std::int64_t>(node->value.get<DataType::UINT64>());
-			default:
-				return 0;
-		}
 	}
 }

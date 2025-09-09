@@ -3,9 +3,7 @@
 #pragma once
 
 #include <array>
-#include <concepts>
 #include <cstdint>
-#include <type_traits>
 
 namespace arc
 {
@@ -35,11 +33,11 @@ namespace arc
 		};
 
 		Type type = Type::NONE;
-		std::uint32_t value = 0;
+		std::int64_t value = 0;
 		std::uint8_t size = 0; /* operand size in bytes */
 
 		constexpr Operand() = default;
-		constexpr Operand(Type t, std::uint32_t v, std::uint8_t s = 0)
+		constexpr Operand(const Type t, std::int64_t v, std::uint8_t s = 0)
 			: type(t), value(v), size(s) {}
 
 		static constexpr Operand reg(std::uint32_t reg_id, std::uint8_t size = 8)
@@ -47,7 +45,7 @@ namespace arc
 			return { Type::REGISTER, reg_id, size };
 		}
 
-		static constexpr Operand imm(std::uint32_t immediate, std::uint8_t size = 4)
+		static constexpr Operand imm(std::int64_t immediate, std::uint8_t size = 4)
 		{
 			return { Type::IMMEDIATE, immediate, size };
 		}
