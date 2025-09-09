@@ -7,6 +7,7 @@
 #include <arc/foundation/module.hpp>
 #include <arc/foundation/region.hpp>
 #include <arc/support/inference.hpp>
+#include <arc/codegen/regalloc.hpp>
 
 namespace arc
 {
