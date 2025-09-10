@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <optional>
 #include <unordered_set>
@@ -37,15 +38,14 @@ namespace arc
 		/**
 		 * @brief Check if spilling is required given available registers
 		 */
-		bool needs_spill(const std::unordered_map<RegisterClass, std::uint32_t> &available) const
+		[[nodiscard]] bool needs_spill(const std::unordered_map<RegisterClass, std::uint32_t> &available) const
 		{
-			for (const auto &[cls, required]: min_required)
+			return std::ranges::any_of(min_required, [&](const auto &pair)
 			{
-				if (auto it = available.find(cls);
-					it == available.end() || it->second < required)
-					return true;
-			}
-			return false;
+				const auto &[cls, required] = pair;
+				auto it = available.find(cls);
+				return it == available.end() || it->second < required;
+			});
 		}
 	};
 
@@ -70,7 +70,7 @@ namespace arc
 	{
 		using register_type = typename Arch::register_type;
 
-		RegisterClass cls;
+		RegisterClass cls = {};
 		std::optional<register_type> hint;
 		std::vector<register_type> forbidden;
 		bool allow_spill = true;
@@ -88,12 +88,12 @@ namespace arc
 		std::optional<register_type> reg;
 		bool spilled = false;
 
-		bool allocated() const
+		[[nodiscard]] bool allocated() const
 		{
 			return reg.has_value();
 		}
 
-		bool on_stack() const
+		[[nodiscard]] bool on_stack() const
 		{
 			return spilled;
 		}
@@ -114,7 +114,7 @@ namespace arc
 	};
 
 	/**
-	 * @brief Hierarchical register allocator component for instruction selection
+	 * @brief Register allocator component for instruction selection
 	 */
 	template<TargetArchitecture Arch>
 	class RegisterAllocator
@@ -127,34 +127,115 @@ namespace arc
 
 		explicit RegisterAllocator(const Arch &target, dag_type &dag) : arch(target), selection_dag(dag) {}
 
+		Budget<Arch> allocate(Region *region, Budget<Arch> available)
+		{
+			region_budgets[region] = {
+				.available = available.available,
+				.allocated = available.allocated
+			};
+			return allocate_region(region, available);
+		}
+
 		/**
 		 * @brief Allocate registers for a region hierarchy
 		 * @param region Root region to allocate
 		 * @param available Budget available from parent
 		 * @return Allocated budget for this region
 		 */
-		Budget<Arch> allocate(Region *region, Budget<Arch> available)
+		Budget<Arch> allocate_region(Region *region, Budget<Arch> available)
 		{
 			/* bottom-up constraint analysis computes register requirements for the
 			 * entire region hierarchy rooted at this region. this gives us accurate
 			 * pressure estimates before we start making allocation decisions */
 			auto constraints = analyze(region);
 
-			/* if constraint analysis determines that register
-			 * requirements exceed availability, immediately identify spill candidates
-			 * rather than attempting complex allocation and then backtracking when
-			 * we run out of registers. this provides deterministic behavior.
-			 *
-			 * author note: quite frankly, backtracking an allocation is a nightmare and
-			 * most of the time, the whole register allocation thing is NP-hard */
+			/* if constraint analysis determines that register requirements exceed
+			 * availability, try simple register reuse through use-def analysis
+			 * before resorting to spilling. this catches obvious reuse opportunities
+			 * without expensive interference graph construction */
 			if (constraints.needs_spill(count_n(available)))
-				return spill_first(region, available, constraints);
+			{
+				auto local_nodes = nodes(region);
+				std::vector<dag_node *> reuse_candidates;
+
+				/* identify values that can reuse registers from non-overlapping lifetimes */
+				auto can_reuse = [&](dag_node *node) -> bool
+				{
+					auto node_range = compute_live_range(node);
+
+					/* check if any other value has a non-overlapping lifetime that
+					 * ends before this node's definition, allowing register reuse */
+					for (auto *other: local_nodes)
+					{
+						if (other != node && needs_allocation(other) &&
+						    infer_class(other->value_t) == infer_class(node->value_t))
+						{
+							if (std::pair<std::uint32_t, std::uint32_t> other_range = compute_live_range(other);
+								other_range.second <= node_range.first)
+							{
+								return true;
+							}
+						}
+					}
+					return false;
+				};
+
+				for (auto *node: local_nodes)
+				{
+					if (needs_allocation(node) && can_reuse(node))
+						reuse_candidates.push_back(node);
+				}
+
+				/* apply register reuse and mark successful reuses */
+				for (auto *candidate: reuse_candidates)
+				{
+					/* find a register from a value whose lifetime has ended that this
+					 * candidate can reuse, avoiding the need to allocate a new register */
+					auto find_reusable = [&](dag_node *node) -> std::optional<register_type>
+					{
+						RegisterClass cls = infer_class(node->value_t);
+						auto node_range = compute_live_range(node);
+
+						/* look through all allocated values to find one whose lifetime
+						 * ended before this node's definition */
+						for (const auto &[allocated_node, result]: allocations)
+						{
+							if (result.allocated() &&
+							    infer_class(allocated_node->value_t) == cls &&
+							    allocated_node->source && allocated_node->source->parent == region)
+							{
+								auto allocated_range = compute_live_range(allocated_node);
+								if (allocated_range.second <= node_range.first)
+								{
+									return result.reg;
+								}
+							}
+						}
+						return std::nullopt;
+					};
+
+					if (auto reused_reg = find_reusable(candidate))
+					{
+						/* mark register reuse by creating allocation with existing register */
+						allocations[candidate] = Result<Arch> { .reg = *reused_reg };
+					}
+				}
+
+				/* if reuse wasn't sufficient, proceed with spilling */
+				auto updated_constraints = analyze(region);
+				if (updated_constraints.needs_spill(count_n(available)))
+				{
+					auto spill_candidates = identify_spill_candidates(region);
+					for (auto *node: spill_candidates)
+						mark_for_spill(node);
+				}
+			}
 
 			return allocate_proportional(region, available, constraints);
 		}
 
 		/**
-		 * @brief Allocate register for DAG node (called by instruction selector)
+		 * @brief Allocate register for DAG node which would be called by the instruction selector
 		 * @param node DAG node needing allocation
 		 * @param req Allocation preferences and constraints
 		 * @return Register or spill marker
@@ -163,14 +244,16 @@ namespace arc
 		{
 			if (!node || !node->source)
 				return {};
-
 			/* check if this node already has an allocation from previous requests.
 			 * this can happen when the instruction selector queries the same node
 			 * multiple times during pattern matching */
 			if (auto it = allocations.find(node);
 				it != allocations.end())
+			{
 				return it->second;
+			}
 
+			std::print("  No cache hit, calling perform_allocation\n");
 			Region *node_region = node->source->parent;
 			if (!node_region)
 				return {};
@@ -200,6 +283,7 @@ namespace arc
 				auto &budget = region_budgets[node_region];
 				RegisterClass cls = infer_class(node->value_t);
 				budget.available[cls].insert(*result.reg);
+				--budget.allocated[cls];
 			}
 		}
 
@@ -230,10 +314,13 @@ namespace arc
 		{
 			auto it = region_budgets.find(region);
 			if (it == region_budgets.end())
+			{
 				return 0;
+			}
 
 			auto pressure_it = it->second.allocated.find(cls);
-			return pressure_it != it->second.allocated.end() ? pressure_it->second : 0;
+			auto result = pressure_it != it->second.allocated.end() ? pressure_it->second : 0;
+			return result;
 		}
 
 		/**
@@ -330,7 +417,7 @@ namespace arc
 				 * execute more frequently and create more register pressure. the
 				 * quadratic scaling reflects that deeply nested loops create
 				 * exponentially more pressure due to overlapping iterations */
-				float loop_multiplier = 1.0f + (std::pow(constraints.loop_depth, 2) * 0.3f);
+				float loop_multiplier = 1.0f + (static_cast<float>(std::pow(constraints.loop_depth, 2)) * 0.3f);
 
 				constraints.min_required[cls] = pressure_info.min_required;
 				constraints.max_simultaneous[cls] = pressure_info.max_simultaneous;
@@ -343,7 +430,7 @@ namespace arc
 		/**
 		 * @brief Merge child constraints into parent
 		 */
-		void merge(Constraints<Arch> &parent, const Constraints<Arch> &child)
+		void merge(Constraints<Arch> &parent, Constraints<Arch> &child)
 		{
 			/* merging child constraints requires careful consideration of temporal
 			 * relationships. we can't just sum requirements because child regions
@@ -352,13 +439,14 @@ namespace arc
 			for (const auto &[cls, child_req]: child.min_required)
 			{
 				parent.min_required[cls] = std::max(parent.min_required[cls], child_req);
+				auto it = parent.max_simultaneous.find(cls);
 				parent.max_simultaneous[cls] = std::max(parent.max_simultaneous[cls], child.max_simultaneous[cls]);
 				parent.complexity[cls] += child.complexity[cls];
 			}
 		}
 
 		/**
-		 * @brief Compute temporal overlap - maximum simultaneous register requirements
+		 * @brief Compute temporal overlap for maximum simultaneous register requirements
 		 */
 		void compute_overlap(Constraints<Arch> &constraints, Region *region)
 		{
@@ -372,7 +460,7 @@ namespace arc
 			 * is the heart of the hierarchical allocation algorithm - instead of
 			 * building global interference graphs, we use region structure to
 			 * compute interference relationships directly */
-			auto exe_state = exe_state(region);
+			auto exe_state = execution_states(region);
 			for (const auto &state: exe_state)
 			{
 				std::unordered_map<RegisterClass, std::uint32_t> concurrent;
@@ -408,7 +496,7 @@ namespace arc
 			 * more complex computations get more registers since they benefit more
 			 * from keeping values in registers rather than spilling */
 			float total_complexity = compute_total_complexity(constraints);
-			float parent_complexity = compute_parent_complexity(constraints);
+			float parent_complexity = compute_parent_complexity(constraints, region);
 			float child_complexity = total_complexity - parent_complexity;
 
 			float parent_ratio = (child_complexity > 0)
@@ -419,7 +507,7 @@ namespace arc
 
 			/* allocate local values with FROM node optimization to eliminate
 			 * unnecessary move instructions at control flow merge points */
-			allocate_local_values(region, parent_budget, constraints);
+			allocate_local_values(region, parent_budget);
 
 			/* distribute remaining budget to children based on their requirements */
 			Budget<Arch> remaining = compute_remaining(available, parent_budget);
@@ -451,30 +539,94 @@ namespace arc
 		 */
 		void allocate_local_values(Region *region, Budget<Arch> &budget)
 		{
-			auto local_nodes = nodes(region);
+		    auto local_nodes = nodes(region);
+			std::print("=== allocate_local_values debug ===\n");
+			std::print("Local nodes found: {}\n", local_nodes.size());
+		    /* separate FROM nodes from other values because FROM nodes have special
+		     * register reuse opportunities that can eliminate move instructions at
+		     * control flow merge points */
+		    std::vector<dag_node *> from_nodes;
+		    std::vector<dag_node *> other_nodes;
 
-			/* separate FROM nodes from other values because FROM nodes have special
-			 * register reuse opportunities that can eliminate move instructions at
-			 * control flow merge points */
-			std::vector<dag_node *> from_nodes;
-			std::vector<dag_node *> other_nodes;
+		    for (auto *node: local_nodes)
+		    {
+		    	std::print("  Node kind={}, type={}, needs_alloc={}\n",
+				  static_cast<int>(node->kind),
+				  static_cast<int>(node->value_t),
+				  needs_allocation(node));
 
-			for (auto *node: local_nodes)
-			{
-				if (node->source && node->source->ir_type == NodeType::FROM)
-					from_nodes.push_back(node);
-				else if (needs_allocation(node))
-					other_nodes.push_back(node);
-			}
+		        if (node->source && node->source->ir_type == NodeType::FROM)
+		            from_nodes.push_back(node);
+		        else if (needs_allocation(node))
+		            other_nodes.push_back(node);
+		    }
 
-			/* allocate FROM nodes first because they have the highest potential
-			 * for register reuse, which can significantly reduce code size and
-			 * improve performance by eliminating move instructions */
-			for (auto *node: from_nodes)
-				allocate_from_node(node, budget);
+		    /* allocate FROM nodes first because they have the highest potential
+		     * for register reuse, which can significantly reduce code size and
+		     * improve performance by eliminating move instructions */
+		    for (auto *node: from_nodes)
+		        allocate_from_node(node, budget);
 
-			for (auto *node: other_nodes)
-				allocate_regular(node, budget);
+		    /* sort other nodes by value_id to process in topological order */
+		    std::ranges::sort(other_nodes, [](const dag_node *a, const dag_node *b)
+		    {
+		        return a->value_id < b->value_id;
+		    });
+
+		    for (auto *node: other_nodes)
+		    {
+		        /* release registers from values whose lifetimes have ended before
+		         * allocating for this node. this enables register reuse in sequential
+		         * dependency chains where earlier values die before later ones are defined */
+		        std::uint32_t current_pos = node->value_id;
+		    	std::print("  Processing node value_id={}\n", node->value_id);
+
+		        /* collect dead allocations to avoid modifying map during iteration */
+		        std::vector<dag_node*> dead_nodes;
+		        for (auto &[allocated_node, result]: allocations)
+		        {
+		            if (result.allocated() && allocated_node->source &&
+		                allocated_node->source->parent == region)
+		            {
+			            /* if this value's lifetime has ended, mark for release */
+		                if (auto live_range = compute_live_range(allocated_node);
+			                live_range.second < current_pos)  /* use < instead of <= to avoid premature release */
+		                {
+		                    dead_nodes.push_back(allocated_node);
+		                }
+		            }
+		        }
+
+		        /* release registers from dead values */
+		        for (auto *dead_node : dead_nodes)
+		        {
+		        	std::print("    RELEASING node value_id={}\n", dead_node->value_id);
+		            auto &result = allocations[dead_node];
+		            RegisterClass cls = infer_class(dead_node->value_t);
+		            register_type released_reg = *result.reg;
+
+		            /* add register back to available pool */
+		            budget.available[cls].insert(released_reg);
+		            --budget.allocated[cls];
+
+		            /* update master region tracking for pressure reporting */
+		            auto &master_budget = region_budgets[region];
+		            master_budget.available[cls].insert(released_reg);
+		            --master_budget.allocated[cls];
+
+		            /* mark as released by clearing the allocation */
+		            result.reg = std::nullopt;
+		        	std::print("    Released register {} from node {}\n", released_reg, dead_node->value_id);
+		        }
+
+		    	std::print("    Budget before allocate_regular: {}\n",
+				budget.available[RegisterClass::GENERAL_PURPOSE].size());
+		    	allocate_regular(node, budget);
+
+		    	auto result = allocations[node];
+		    	std::print("    After allocation: allocated={}, spilled={}\n",
+						   result.allocated(), result.spilled);
+		    }
 		}
 
 		/**
@@ -496,6 +648,18 @@ namespace arc
 					if (is_available(budget, cls, *alloc.reg))
 					{
 						allocate_specific(node, *alloc.reg, cls, budget);
+						return;
+					}
+				}
+				else if (source->source && source->source->parent != node->source->parent)
+				{
+					/* if the source value is from a different region and hasn't been
+					 * allocated yet, we can try to allocate it now to enable reuse
+					 * as they are more likely to be available at control flow merge points */
+					auto caller_saved = arch.caller_saved(cls);
+					if (!caller_saved.empty() && is_available(budget, cls, caller_saved[0]))
+					{
+						allocate_specific(node, caller_saved[0], cls, budget);
 						return;
 					}
 				}
@@ -547,7 +711,7 @@ namespace arc
 			std::uint32_t current_live = 0;
 			for (const auto &[pos, delta]: events)
 			{
-				current_live += delta;
+				current_live += static_cast<std::uint32_t>(delta);
 				info.max_simultaneous = std::max(info.max_simultaneous, current_live);
 			}
 
@@ -637,7 +801,7 @@ namespace arc
 			return ns;
 		}
 
-		RegisterClass infer_class(DataType type) const
+		[[nodiscard]] RegisterClass infer_class(DataType type) const
 		{
 			/* infer register class from value type using target-specific rules.
 			 * different architectures have different conventions for where floating
@@ -662,18 +826,25 @@ namespace arc
 			return node->kind == NodeKind::VALUE && node->value_t != DataType::VOID;
 		}
 
+		/**
+		 * @note: this REQUIRES selection dag to call sort() before live range analysis
+		 * to establish topological ordering. This is guaranteed by the instruction selection
+		 * integration which calls sort() during pattern matching.
+		 */
 		std::pair<std::uint32_t, std::uint32_t> compute_live_range(dag_node *node) const
 		{
 			/* compute live range as def position to last use position within the
 			 * DAG. this is a simplified analysis that works well with the hierarchical
-			 * approach because region boundaries limit interference scope */
+			 * approach because region boundaries naturally limit interference scope */
 			std::uint32_t def_pos = node->value_id;
 			std::uint32_t last_use = def_pos;
 
+			if (node->users.empty())
+				return { def_pos, UINT32_MAX };
 			for (auto *user: node->users)
 				last_use = std::max(last_use, user->value_id);
-
-			return { def_pos, last_use + 1 };
+			std::print("    Live range for node {}: [{}-{}]\n", node->value_id, def_pos, last_use);
+			return { def_pos, last_use };
 		}
 
 		float compute_node_complexity(dag_node *node) const
@@ -717,8 +888,10 @@ namespace arc
 			return total;
 		}
 
-		float compute_parent_complexity(const Constraints<Arch> &constraints) const
+		float compute_parent_complexity(const Constraints<Arch> &constraints, Region *region) const
 		{
+			if (region->children().empty())
+				return compute_total_complexity(constraints);
 			/* estimate what fraction of total complexity belongs to the parent region
 			 * versus child regions. this is used for proportional budget allocation
 			 * between parent and children */
@@ -734,7 +907,7 @@ namespace arc
 
 			for (const auto &[cls, regs]: available.available)
 			{
-				std::uint32_t parent_count = static_cast<std::uint32_t>(regs.size() * ratio);
+				auto parent_count = static_cast<std::uint32_t>(regs.size() * ratio);
 				auto reg_iter = regs.begin();
 				for (std::uint32_t i = 0; i < parent_count && reg_iter != regs.end(); ++i, ++reg_iter)
 				{
@@ -770,7 +943,9 @@ namespace arc
 			{
 				if (auto it = region_constraints.find(child);
 					it != region_constraints.end())
+				{
 					allocate(child, remaining);
+				}
 			}
 		}
 
@@ -820,6 +995,12 @@ namespace arc
 			allocations[node] = Result<Arch> { .reg = reg };
 			budget.available[cls].erase(reg);
 			++budget.allocated[cls];
+
+			/* update master budget for the region to keep track of overall pressure */
+			Region *node_region = node->source->parent;
+			auto &master_budget = region_budgets[node_region];
+			master_budget.available[cls].erase(reg);
+			++master_budget.allocated[cls];
 		}
 
 		void allocate_regular(dag_node *node, Budget<Arch> &budget)
@@ -828,7 +1009,6 @@ namespace arc
 			 * requirements or optimization opportunities like FROM nodes do */
 			RegisterClass cls = infer_class(node->value_t);
 			auto &available_regs = budget.available[cls];
-
 			if (!available_regs.empty())
 			{
 				/* take the first available register. in a more sophisticated
@@ -836,6 +1016,7 @@ namespace arc
 				 * on instruction encoding constraints or calling conventions */
 				register_type reg = *available_regs.begin();
 				allocate_specific(node, reg, cls, budget);
+				auto stored_result = allocations[node];
 			}
 			else
 			{
@@ -866,6 +1047,7 @@ namespace arc
 				{
 					result.reg = *req.hint;
 					available_regs.erase(*req.hint);
+					++budget.allocated[req.cls];
 					return result;
 				}
 			}
@@ -875,11 +1057,12 @@ namespace arc
 			for (auto reg_id: available_regs)
 			{
 				const bool forbidden = std::find(req.forbidden.begin(), req.forbidden.end(),
-				                           reg_id) != req.forbidden.end();
+				                                 reg_id) != req.forbidden.end();
 				if (!forbidden)
 				{
 					result.reg = reg_id;
 					available_regs.erase(reg_id);
+					++budget.allocated[req.cls];
 					return result;
 				}
 			}

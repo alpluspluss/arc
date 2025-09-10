@@ -12,7 +12,7 @@
 #include <arc/support/algorithm.hpp>
 #include <arc/support/allocator.hpp>
 #include <arc/support/slice.hpp>
-
+#include <print>
 namespace arc
 {
 	struct Node;
@@ -209,7 +209,7 @@ namespace arc
 		/**
 		 * @brief Topological sort of DAG nodes
 		 */
-		std::vector<DAGNode *> sort() const
+		std::vector<DAGNode *> sort()
 		{
 			/* this is Khan's in-degree topo sort algorithm;
 			 * see: https://en.wikipedia.org/wiki/Topological_sorting#Kahn's_algorithm */
@@ -245,6 +245,16 @@ namespace arc
 			return result;
 		}
 
+		/**
+		 * @brief Linearize DAG nodes in topological order for live range analysis
+		 */
+		void linearize()
+		{
+			auto sorted = sort();
+			for (std::size_t i = 0; i < sorted.size(); ++i)
+				sorted[i]->value_id = static_cast<std::uint32_t>(i + 1);
+		}
+
 	private:
 		std::unordered_map<Node *, DAGNode *> node_map;
 		std::vector<DAGNode *> dag_nodes;
@@ -273,7 +283,8 @@ namespace arc
 				}
 				case NodeType::FUNCTION:
 				{
-					throw std::runtime_error("NodeType::FUNCTION should not appear in region DAG conversion");
+					//throw std::runtime_error("NodeType::FUNCTION should not appear in region DAG conversion");
+					break;
 				}
 				case NodeType::LIT:
 				{
@@ -384,6 +395,25 @@ namespace arc
 				{
 					dag = make_node<NodeKind::VALUE>();
 					dag->value_t = ir->type_kind;
+
+					/* FROM node needs immediate operand connection because
+					 * their inputs may come from different regions not processed by
+					 * this DAG build */
+					for (Node* input : ir->inputs)
+					{
+						DAGNode* input_dag = find(input);
+						if (!input_dag)
+						{
+							input_dag = make_node<NodeKind::VALUE>();
+							input_dag->source = input;
+							input_dag->value_t = input->type_kind;
+							input_dag->value_id = next_value++;
+							node_map[input] = input_dag;
+							dag_nodes.push_back(input_dag);
+						}
+						dag->operands.push_back(input_dag);
+						input_dag->users.push_back(dag);
+					}
 					break;
 				}
 				case NodeType::PARAM:

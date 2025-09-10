@@ -20,7 +20,7 @@ set(ARC_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(ARC_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}")
 
 # build options
-option(ARC_BUILD_BENCHMARKS "Build benchmarks" OFF)
+option(ARC_BUILD_BENCHMARKS "Build benchmarks" ON)
 option(ARC_BUILD_EXAMPLES "Build examples" OFF)
 option(ARC_BUILD_TESTS "Build tests" ON)
 option(ARC_BUILD_SHARED_LIB "Build shared libraries" OFF)
@@ -96,7 +96,7 @@ if(ARC_BUILD_EXAMPLES)
 endif()
 
 if(ARC_BUILD_BENCHMARKS)
-    add_subdirectory(benchmarks)
+    add_subdirectory(benches)
 endif()
 
 # installation rules

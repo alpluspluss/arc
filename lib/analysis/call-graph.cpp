@@ -11,7 +11,7 @@
 
 namespace arc
 {
-	bool CallGraphResult::update(const std::vector<Region *> &modified_regions)
+	bool CallGraphResult::update(const std::vector<Region *>&)
 	{
 		/* call graph analysis depends on the structure of function calls and parameter
 		 * flow which rarely changes during optimization passes. most transforms like

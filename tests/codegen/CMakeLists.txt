@@ -10,6 +10,11 @@ arc_test(lowering-test
         LIBS Arc::Arc
 )
 
+arc_test(regalloc-test
+        SOURCES regalloc.cpp
+        LIBS Arc::Arc
+)
+
 arc_test(selection-dag-test
         SOURCES selection-dag.cpp
         LIBS Arc::Arc

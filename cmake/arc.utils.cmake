@@ -168,7 +168,12 @@ function(arc_benchmark name)
     cmake_parse_arguments(ARG "" "" "SOURCES;LIBS" ${ARGN})
 
     arc_executable(${name} SOURCES ${ARG_SOURCES} LIBS ${ARG_LIBS})
-
+    # link with GBench if found
+    if(TARGET benchmark::benchmark)
+        target_link_libraries(${name} PRIVATE benchmark::benchmark)
+    elseif(TARGET benchmark)
+        target_link_libraries(${name} PRIVATE benchmark)
+    endif()
     # benchmarks should be optimized even in debug builds
     if (CMAKE_BUILD_TYPE STREQUAL "Debug")
         target_compile_options(${name} PRIVATE -O3)

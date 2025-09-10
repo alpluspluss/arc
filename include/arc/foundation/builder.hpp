@@ -460,16 +460,16 @@ namespace arc
 		 */
 		Node* array_alloc(const TypedData& struct_type, std::uint32_t count, std::uint32_t n = 1);
 
-	private:
-		Module &module;
-		Region *current_region;
-
 		/**
 		 * @brief Connect inputs to a node
 		 * @param node Node to connect inputs to
 		 * @param inputs Input nodes
 		 */
 		static void connect_inputs(Node *node, const std::vector<Node *> &inputs);
+
+	private:
+		Module &module;
+		Region *current_region;
 
 		template<DataType T>
 		friend class FunctionBuilder;
