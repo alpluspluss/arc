@@ -253,7 +253,6 @@ namespace arc
 				return it->second;
 			}
 
-			std::print("  No cache hit, calling perform_allocation\n");
 			Region *node_region = node->source->parent;
 			if (!node_region)
 				return {};
@@ -540,8 +539,6 @@ namespace arc
 		void allocate_local_values(Region *region, Budget<Arch> &budget)
 		{
 		    auto local_nodes = nodes(region);
-			std::print("=== allocate_local_values debug ===\n");
-			std::print("Local nodes found: {}\n", local_nodes.size());
 		    /* separate FROM nodes from other values because FROM nodes have special
 		     * register reuse opportunities that can eliminate move instructions at
 		     * control flow merge points */
@@ -550,11 +547,6 @@ namespace arc
 
 		    for (auto *node: local_nodes)
 		    {
-		    	std::print("  Node kind={}, type={}, needs_alloc={}\n",
-				  static_cast<int>(node->kind),
-				  static_cast<int>(node->value_t),
-				  needs_allocation(node));
-
 		        if (node->source && node->source->ir_type == NodeType::FROM)
 		            from_nodes.push_back(node);
 		        else if (needs_allocation(node))
@@ -579,7 +571,6 @@ namespace arc
 		         * allocating for this node. this enables register reuse in sequential
 		         * dependency chains where earlier values die before later ones are defined */
 		        std::uint32_t current_pos = node->value_id;
-		    	std::print("  Processing node value_id={}\n", node->value_id);
 
 		        /* collect dead allocations to avoid modifying map during iteration */
 		        std::vector<dag_node*> dead_nodes;
@@ -600,7 +591,6 @@ namespace arc
 		        /* release registers from dead values */
 		        for (auto *dead_node : dead_nodes)
 		        {
-		        	std::print("    RELEASING node value_id={}\n", dead_node->value_id);
 		            auto &result = allocations[dead_node];
 		            RegisterClass cls = infer_class(dead_node->value_t);
 		            register_type released_reg = *result.reg;
@@ -616,16 +606,9 @@ namespace arc
 
 		            /* mark as released by clearing the allocation */
 		            result.reg = std::nullopt;
-		        	std::print("    Released register {} from node {}\n", released_reg, dead_node->value_id);
 		        }
 
-		    	std::print("    Budget before allocate_regular: {}\n",
-				budget.available[RegisterClass::GENERAL_PURPOSE].size());
 		    	allocate_regular(node, budget);
-
-		    	auto result = allocations[node];
-		    	std::print("    After allocation: allocated={}, spilled={}\n",
-						   result.allocated(), result.spilled);
 		    }
 		}
 
@@ -839,11 +822,8 @@ namespace arc
 			std::uint32_t def_pos = node->value_id;
 			std::uint32_t last_use = def_pos;
 
-			if (node->users.empty())
-				return { def_pos, UINT32_MAX };
 			for (auto *user: node->users)
 				last_use = std::max(last_use, user->value_id);
-			std::print("    Live range for node {}: [{}-{}]\n", node->value_id, def_pos, last_use);
 			return { def_pos, last_use };
 		}
 

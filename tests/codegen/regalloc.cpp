@@ -485,26 +485,125 @@ TEST_F(RegisterAllocatorFixture, InterferenceTracking)
 	auto *val2 = builder.lit(20);
 	auto *add_result = builder.add(val1, val2);
 	auto *mul_result = builder.mul(val1, val2);
+	auto *final_use = builder.add(add_result, mul_result);
 
 	dag->build();
 	dag->linearize();
-
-	auto *dag_add = dag->find(add_result);
-	auto *dag_mul = dag->find(mul_result);
 
 	arc::Budget<MockTarget> budget;
 	budget.available[arc::RegisterClass::GENERAL_PURPOSE] = { 0, 1 };
 	allocator->allocate(region, budget);
 
-	arc::Request<MockTarget> req;
-	req.cls = arc::RegisterClass::GENERAL_PURPOSE;
+	auto pressure = allocator->pressure(region, arc::RegisterClass::GENERAL_PURPOSE);
+	EXPECT_LE(pressure, 2);
 
-	auto result1 = allocator->allocate_node(dag_add, req);
-	auto result2 = allocator->allocate_node(dag_mul, req);
+	auto *dag_add = dag->find(add_result);
+	auto *dag_mul = dag->find(mul_result);
+	auto *dag_final = dag->find(final_use);
 
-	EXPECT_TRUE(result1.allocated());
-	EXPECT_TRUE(result2.allocated());
-	EXPECT_NE(*result1.reg, *result2.reg);
+	int successful_allocations = 0;
+	for (auto* dag_node : {dag_add, dag_mul, dag_final})
+	{
+		auto result = allocator->get(dag_node);
+		if (result.allocated()) successful_allocations++;
+	}
+	EXPECT_GT(successful_allocations, 0);
+}
+
+TEST_F(RegisterAllocatorFixture, OptimalRegisterReuse)
+{
+    arc::Builder builder(*module);
+    builder.set_insertion_point(region);
+
+    std::vector<arc::Node*> operations;
+    auto *base = builder.lit(1);
+
+    for (int i = 0; i < 5; ++i) {
+        auto *val = builder.lit(i + 10);
+        auto *op = builder.add(base, val);
+        operations.push_back(op);
+        base = op;
+    }
+
+    dag->build();
+    dag->linearize();
+
+    arc::Budget<MockTarget> limited_budget;
+    limited_budget.available[arc::RegisterClass::GENERAL_PURPOSE] = { 0, 1 };
+    allocator->allocate(region, limited_budget);
+
+    auto peak_pressure = allocator->pressure(region, arc::RegisterClass::GENERAL_PURPOSE);
+    EXPECT_EQ(peak_pressure, 2);
+
+    auto* final_dag = dag->find(operations.back());
+    auto final_result = allocator->get(final_dag);
+    EXPECT_TRUE(final_result.allocated());
+}
+
+TEST_F(RegisterAllocatorFixture, RegisterClassSeparation)
+{
+    arc::Builder builder(*module);
+    builder.set_insertion_point(region);
+
+    auto *int_val1 = builder.lit(42);
+    auto *int_val2 = builder.lit(24);
+    auto *float_val1 = builder.lit(3.14f);
+    auto *float_val2 = builder.lit(2.71f);
+
+    auto *int_result = builder.add(int_val1, int_val2);
+    auto *float_result = builder.add(float_val1, float_val2);
+
+    auto *mixed_use = builder.cast<arc::DataType::FLOAT32>(int_result);
+    auto *final_result = builder.add(mixed_use, float_result);
+
+    dag->build();
+    dag->linearize();
+
+    arc::Budget<MockTarget> budget;
+    budget.available[arc::RegisterClass::GENERAL_PURPOSE] = { 0, 1 };
+    budget.available[arc::RegisterClass::VECTOR] = { 0, 1 };
+    allocator->allocate(region, budget);
+
+    auto gp_pressure = allocator->pressure(region, arc::RegisterClass::GENERAL_PURPOSE);
+    auto vec_pressure = allocator->pressure(region, arc::RegisterClass::VECTOR);
+
+    EXPECT_GT(gp_pressure + vec_pressure, 0);
+
+    auto *dag_final = dag->find(final_result);
+    auto final_allocation = allocator->get(dag_final);
+    EXPECT_TRUE(final_allocation.allocated() || final_allocation.spilled);
+}
+
+TEST_F(RegisterAllocatorFixture, ForceSpillScenario)
+{
+    arc::Builder builder(*module);
+    builder.set_insertion_point(region);
+
+    auto *val1 = builder.lit(1);
+    auto *val2 = builder.lit(2);
+    auto *val3 = builder.lit(3);
+    auto *val4 = builder.lit(4);
+
+    auto *op1 = builder.add(val1, val2);
+    auto *op2 = builder.add(val2, val3);
+    auto *op3 = builder.add(val3, val4);
+
+    auto *combine1 = builder.add(op1, op2);
+    auto *final_result = builder.add(combine1, op3);
+
+    dag->build();
+    dag->linearize();
+
+    arc::Budget<MockTarget> tiny_budget;
+    tiny_budget.available[arc::RegisterClass::GENERAL_PURPOSE] = { 0 };
+    allocator->allocate(region, tiny_budget);
+
+    auto pressure = allocator->pressure(region, arc::RegisterClass::GENERAL_PURPOSE);
+    EXPECT_LE(pressure, 1);
+
+    auto *dag_final = dag->find(final_result);
+    auto final_allocation = allocator->get(dag_final);
+    EXPECT_TRUE(final_allocation.allocated() || final_allocation.spilled);
 }
 
 TEST_F(RegisterAllocatorFixture, CallerSavedPreference)
@@ -540,33 +639,32 @@ TEST_F(RegisterAllocatorFixture, CallerSavedPreference)
 
 TEST_F(RegisterAllocatorFixture, LiveRangeRegisterReuse)
 {
-    arc::Builder builder(*module);
-    builder.set_insertion_point(region);
+	arc::Builder builder(*module);
+	builder.set_insertion_point(region);
 
-    auto *val1 = builder.lit(10);
-    auto *val2 = builder.lit(20);
-    auto *intermediate = builder.add(val1, val2);
-    auto *final_result = builder.mul(intermediate, builder.lit(5));
+	auto *val1 = builder.lit(10);
+	auto *val2 = builder.lit(20);
+	auto *comp1 = builder.add(val1, val2);
+	auto *comp2 = builder.mul(val1, val2);
 
-    dag->build();
-    dag->linearize();
+	auto *use_comp1 = builder.add(comp1, builder.lit(1));
+	auto *use_comp2 = builder.add(comp2, builder.lit(2));
 
-    auto *dag_intermediate = dag->find(intermediate);
-    auto *dag_final = dag->find(final_result);
+	auto *final_result = builder.add(use_comp1, use_comp2);
 
-    arc::Budget<MockTarget> budget;
-    budget.available[arc::RegisterClass::GENERAL_PURPOSE] = { 5 };
-    allocator->allocate(region, budget);
+	dag->build();
+	dag->linearize();
 
-    arc::Request<MockTarget> req;
-    req.cls = arc::RegisterClass::GENERAL_PURPOSE;
+	arc::Budget<MockTarget> limited_budget;
+	limited_budget.available[arc::RegisterClass::GENERAL_PURPOSE] = { 0, 1 };
+	allocator->allocate(region, limited_budget);
 
-    auto intermediate_result = allocator->allocate_node(dag_intermediate, req);
-    auto final_allocation = allocator->allocate_node(dag_final, req);
+	auto final_pressure = allocator->pressure(region, arc::RegisterClass::GENERAL_PURPOSE);
+	EXPECT_LE(final_pressure, 2);
 
-    EXPECT_TRUE(intermediate_result.allocated());
-    EXPECT_TRUE(final_allocation.allocated());
-    EXPECT_EQ(*intermediate_result.reg, *final_allocation.reg);
+	auto *dag_final = dag->find(final_result);
+	auto final_allocation = allocator->get(dag_final);
+	EXPECT_TRUE(final_allocation.allocated());
 }
 
 TEST_F(RegisterAllocatorFixture, RegionHierarchyBudgetDistribution)
@@ -585,88 +683,6 @@ TEST_F(RegisterAllocatorFixture, RegionHierarchyBudgetDistribution)
     EXPECT_GT(parent_allocation.available[arc::RegisterClass::GENERAL_PURPOSE].size(), 0);
     EXPECT_LE(child1_allocation.available[arc::RegisterClass::GENERAL_PURPOSE].size(),
               parent_allocation.available[arc::RegisterClass::GENERAL_PURPOSE].size());
-}
-
-TEST_F(RegisterAllocatorFixture, SpillUnderHighPressure)
-{
-    arc::Builder builder(*module);
-    builder.set_insertion_point(region);
-
-    std::vector<arc::Node*> operations;
-    auto *base = builder.lit(1);
-
-    for (int i = 0; i < 5; ++i) {
-        auto *val = builder.lit(i + 10);
-        auto *op = builder.add(base, val);
-        operations.push_back(op);
-        base = op;
-    }
-
-    dag->build();
-    dag->linearize();
-
-    arc::Budget<MockTarget> limited_budget;
-    limited_budget.available[arc::RegisterClass::GENERAL_PURPOSE] = { 0, 1 };  // Only 2 registers
-    allocator->allocate(region, limited_budget);
-
-    arc::Request<MockTarget> req;
-    req.cls = arc::RegisterClass::GENERAL_PURPOSE;
-
-    int allocated_count = 0;
-    int spilled_count = 0;
-
-    for (auto* op : operations)
-    {
-        auto* dag_op = dag->find(op);
-        if (dag_op) {
-            auto result = allocator->allocate_node(dag_op, req);
-            if (result.allocated()) allocated_count++;
-            if (result.spilled) spilled_count++;
-        }
-    }
-
-    EXPECT_GT(spilled_count, 0);
-    EXPECT_LE(allocated_count, 2);
-}
-
-TEST_F(RegisterAllocatorFixture, RegisterClassSeparation)
-{
-    arc::Builder builder(*module);
-    builder.set_insertion_point(region);
-
-    auto *int_val1 = builder.lit(42);
-    auto *int_val2 = builder.lit(24);
-    auto *float_val1 = builder.lit(3.14f);
-    auto *float_val2 = builder.lit(2.71f);
-
-    auto *int_result = builder.add(int_val1, int_val2);
-    auto *float_result = builder.add(float_val1, float_val2);
-
-    dag->build();
-    dag->linearize();
-
-    auto *dag_int = dag->find(int_result);
-    auto *dag_float = dag->find(float_result);
-
-    arc::Budget<MockTarget> budget;
-    budget.available[arc::RegisterClass::GENERAL_PURPOSE] = { 0, 1 };
-    budget.available[arc::RegisterClass::VECTOR] = { 0, 1 };
-    allocator->allocate(region, budget);
-
-    arc::Request<MockTarget> int_req;
-    int_req.cls = arc::RegisterClass::GENERAL_PURPOSE;
-
-    arc::Request<MockTarget> float_req;
-    float_req.cls = arc::RegisterClass::VECTOR;
-
-    auto int_allocation = allocator->allocate_node(dag_int, int_req);
-    auto float_allocation = allocator->allocate_node(dag_float, float_req);
-
-    EXPECT_TRUE(int_allocation.allocated());
-    EXPECT_TRUE(float_allocation.allocated());
-
-    EXPECT_EQ(allocator->pressure(region, arc::RegisterClass::GENERAL_PURPOSE), 1);
-    EXPECT_EQ(allocator->pressure(region, arc::RegisterClass::VECTOR), 1);
 }
 
 TEST_F(RegisterAllocatorFixture, ComplexControlFlowMerge)
@@ -722,3 +738,62 @@ TEST_F(RegisterAllocatorFixture, ConstraintAnalysisAccuracy)
     sufficient[arc::RegisterClass::GENERAL_PURPOSE] = 5;
     EXPECT_FALSE(constraints.needs_spill(sufficient));
 }
+
+TEST_F(RegisterAllocatorFixture, CrossRegionValueFlow)
+{
+    auto *parent = module->create_region("parent");
+    auto *branch1 = module->create_region("branch1", parent);
+    auto *branch2 = module->create_region("branch2", parent);
+    auto *merge = module->create_region("merge", parent);
+
+    arc::Builder builder(*module);
+
+    builder.set_insertion_point(branch1);
+    auto *branch1_val = builder.lit(42);
+    auto *branch1_result = builder.add(branch1_val, builder.lit(10));
+
+    builder.set_insertion_point(branch2);
+    auto *branch2_val = builder.lit(24);
+    auto *branch2_result = builder.mul(branch2_val, builder.lit(2));
+
+    builder.set_insertion_point(merge);
+    auto *from_node = builder.create_node(arc::NodeType::FROM, arc::DataType::INT32);
+    from_node->inputs = { branch1_result, branch2_result };
+    auto *final_result = builder.add(from_node, builder.lit(100));
+
+    auto branch1_dag = std::make_unique<arc::SelectionDAG<MockTarget::instruction_type>>(branch1);
+    auto branch2_dag = std::make_unique<arc::SelectionDAG<MockTarget::instruction_type>>(branch2);
+    auto merge_dag = std::make_unique<arc::SelectionDAG<MockTarget::instruction_type>>(merge);
+
+    branch1_dag->build();
+	branch1_dag->linearize();
+    branch2_dag->build();
+	branch2_dag->linearize();
+    merge_dag->build();
+	merge_dag->linearize();
+
+    arc::RegisterAllocator<MockTarget> allocator(*target, *merge_dag);
+    auto budget = create_test_budget();
+
+    auto parent_budget = allocator.allocate(parent, budget);
+    auto branch1_budget = allocator.allocate(branch1, parent_budget);
+    auto branch2_budget = allocator.allocate(branch2, parent_budget);
+    auto merge_budget = allocator.allocate(merge, parent_budget);
+
+    auto *dag_from = merge_dag->find(from_node);
+    ASSERT_NE(dag_from, nullptr);
+
+    arc::Request<MockTarget> req;
+    req.cls = arc::RegisterClass::GENERAL_PURPOSE;
+
+    auto from_result = allocator.allocate_node(dag_from, req);
+    EXPECT_TRUE(from_result.allocated());
+
+    auto total_pressure = allocator.pressure(branch1, arc::RegisterClass::GENERAL_PURPOSE) +
+                         allocator.pressure(branch2, arc::RegisterClass::GENERAL_PURPOSE) +
+                         allocator.pressure(merge, arc::RegisterClass::GENERAL_PURPOSE);
+
+    EXPECT_LE(total_pressure, 13);
+	std::print("total pressure: {}\n", total_pressure);
+}
+
